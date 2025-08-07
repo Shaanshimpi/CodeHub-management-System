@@ -1,0 +1,1980 @@
+module.exports = {
+  jwt: {
+    secret: process.env.JWT_SECRET,
+    expiration: process.env.JWT_EXPIRE,
+    refreshExpiration: process.env.JWT_REFRESH_EXPIRE
+  },
+  smtp: {
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  },
+  frontendUrl: process.env.FRONTEND_URL
+};
+
+const Attendance = require('../models/attendanceModel');
+const Student = require('../models/studentModel');
+
+// @desc    Get all attendance records
+// @route   GET /api/attendance
+// @access  Private/Admin
+const getAttendance = async (req, res, next) => {
+  try {
+    const attendance = await Attendance.find()
+      .populate('studentId', 'studentId')
+      .populate('courseId', 'name')
+      .populate('trainerId', 'name');
+    
+    res.json(attendance);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Create attendance record
+// @route   POST /api/attendance
+// @access  Private/Trainer
+const createAttendance = async (req, res, next) => {
+  try {
+    const { studentId, courseId, status, notes } = req.body;
+    
+    // Check if student is assigned to trainer
+    const student = await Student.findById(studentId);
+    if (!student) {
+      res.status(404);
+      throw new Error('Student not found');
+    }
+    
+    if (student.assignedTrainer.toString() !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to mark attendance for this student');
+    }
+    
+    // Check if student is assigned to the course
+    if (!student.assignedCourses.includes(courseId)) {
+      res.status(400);
+      throw new Error('Student is not assigned to this course');
+    }
+    
+    const attendance = await Attendance.create({
+      studentId,
+      courseId,
+      trainerId: req.user._id,
+      date: new Date(),
+      status,
+      notes
+    });
+    
+    res.status(201).json(attendance);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update attendance record
+// @route   PUT /api/attendance/:id
+// @access  Private/Trainer
+const updateAttendance = async (req, res, next) => {
+  try {
+    const attendance = await Attendance.findById(req.params.id);
+    
+    if (!attendance) {
+      res.status(404);
+      throw new Error('Attendance record not found');
+    }
+    
+    // Check if the requesting trainer created this record
+    if (attendance.trainerId.toString() !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to update this attendance record');
+    }
+    
+    attendance.status = req.body.status || attendance.status;
+    attendance.notes = req.body.notes || attendance.notes;
+    
+    const updatedAttendance = await attendance.save();
+    
+    res.json(updatedAttendance);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Bulk create attendance records
+// @route   POST /api/attendance/bulk
+// @access  Private/Trainer
+const createBulkAttendance = async (req, res, next) => {
+  try {
+    const { date, records } = req.body;
+    
+    // Validate all students are assigned to the trainer
+    const studentIds = records.map(record => record.studentId);
+    const students = await Student.find({ _id: { $in: studentIds } });
+    
+    for (const student of students) {
+      if (student.assignedTrainer.toString() !== req.user._id.toString()) {
+        res.status(403);
+        throw new Error(`Not authorized to mark attendance for student ${student.studentId}`);
+      }
+    }
+    
+    // Create attendance records
+    const attendanceRecords = records.map(record => ({
+      studentId: record.studentId,
+      courseId: record.courseId,
+      trainerId: req.user._id,
+      date: new Date(date),
+      status: record.status,
+      notes: record.notes || ''
+    }));
+    
+    const createdRecords = await Attendance.insertMany(attendanceRecords);
+    
+    res.status(201).json(createdRecords);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get attendance for a student
+// @route   GET /api/attendance/student/:studentId
+// @access  Private
+const getStudentAttendance = async (req, res, next) => {
+  try {
+    const student = await Student.findById(req.params.studentId);
+    
+    if (!student) {
+      res.status(404);
+      throw new Error('Student not found');
+    }
+    
+    // Check if the requesting user has access to this student's attendance
+    if (req.user.role === 'student' && student.userId.toString() !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to access this student\'s attendance');
+    }
+    
+    const attendance = await Attendance.find({ studentId: student._id })
+      .populate('courseId', 'name')
+      .populate('trainerId', 'name')
+      .sort({ date: -1 });
+    
+    res.json(attendance);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get attendance marked by a trainer
+// @route   GET /api/attendance/trainer/:trainerId
+// @access  Private/Admin
+const getTrainerAttendance = async (req, res, next) => {
+  try {
+    // Only allow admin or the trainer themselves to view
+    if (req.user.role !== 'admin' && req.params.trainerId !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to access this trainer\'s attendance records');
+    }
+    
+    const attendance = await Attendance.find({ trainerId: req.params.trainerId })
+      .populate('studentId', 'studentId')
+      .populate('courseId', 'name')
+      .sort({ date: -1 });
+    
+    res.json(attendance);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  getAttendance,
+  createAttendance,
+  updateAttendance,
+  createBulkAttendance,
+  getStudentAttendance,
+  getTrainerAttendance
+};
+
+
+const User = require('../models/userModel');
+const { generateToken, generateRefreshToken } = require('../utils/generateToken');
+const sendEmail = require('../utils/sendEmail');
+const config = require('../config/config');
+
+// @desc    Register a new user
+// @route   POST /api/auth/register
+// @access  Public
+const registerUser = async (req, res, next) => {
+  try {
+    const { name, email, phone, password, role } = req.body;
+
+    // Check if user exists
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      res.status(400);
+      throw new Error('User already exists');
+    }
+
+    // Create user
+    const user = await User.create({
+      name,
+      email,
+      phone,
+      password,
+      role: role || 'student'
+    });
+
+    if (user) {
+      const token = generateToken(user._id);
+      const refreshToken = generateRefreshToken(user._id);
+
+      res.status(201).json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        token,
+        refreshToken
+      });
+    } else {
+      res.status(400);
+      throw new Error('Invalid user data');
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Authenticate user & get token
+// @route   POST /api/auth/login
+// @access  Public
+const loginUser = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validate request
+    if (!email || !password) {
+      res.status(400);
+      throw new Error('Please provide email and password');
+    }
+
+    // Get user with password field
+    const user = await User.findOne({ email }).select('+password');
+
+    if (!user) {
+      res.status(401);
+      throw new Error('Invalid credentials');
+    }
+
+    // Check password
+    const isMatch = await user.matchPassword(password);
+    
+    if (!isMatch) {
+      res.status(401);
+      throw new Error('Invalid credentials');
+    }
+
+    const token = generateToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      token,
+      refreshToken
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Refresh token
+// @route   POST /api/auth/refresh
+// @access  Public
+const refreshToken = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      res.status(401);
+      throw new Error('No refresh token provided');
+    }
+
+    const decoded = jwt.verify(refreshToken, config.jwt.secret);
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      res.status(401);
+      throw new Error('User not found');
+    }
+
+    const newToken = generateToken(user._id);
+    const newRefreshToken = generateRefreshToken(user._id);
+
+    res.json({
+      token: newToken,
+      refreshToken: newRefreshToken
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Forgot password
+// @route   POST /api/auth/forgot-password
+// @access  Public
+const forgotPassword = async (req, res, next) => {
+  try {
+    const user = await User.findOne({ email: req.body.email });
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    const resetToken = generateToken(user._id);
+    const resetUrl = `${config.frontendUrl}/reset-password/${resetToken}`;
+
+    const message = `
+      <h1>You have requested a password reset</h1>
+      <p>Please click the following link to reset your password:</p>
+      <a href=${resetUrl} clicktracking=off>${resetUrl}</a>
+      <p>This link will expire in 15 minutes.</p>
+    `;
+
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: 'Password Reset Request',
+        message
+      });
+
+      res.json({ message: 'Email sent' });
+    } catch (error) {
+      res.status(500);
+      throw new Error('Email could not be sent');
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Reset password
+// @route   PUT /api/auth/reset-password/:token
+// @access  Public
+const resetPassword = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    const decoded = jwt.verify(token, config.jwt.secret);
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    user.password = password;
+    await user.save();
+
+    res.json({ message: 'Password reset successful' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  registerUser,
+  loginUser,
+  refreshToken,
+  forgotPassword,
+  resetPassword
+};
+
+
+const Course = require('../models/courseModel');
+
+// @desc    Get all courses
+// @route   GET /api/courses
+// @access  Public
+const getCourses = async (req, res, next) => {
+  try {
+    const courses = await Course.find({ isActive: true });
+    res.json(courses);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all courses (admin)
+// @route   GET /api/courses/all
+// @access  Private/Admin
+const getAllCourses = async (req, res, next) => {
+  try {
+    const courses = await Course.find();
+    res.json(courses);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get single course
+// @route   GET /api/courses/:id
+// @access  Public
+const getCourse = async (req, res, next) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    
+    if (!course) {
+      res.status(404);
+      throw new Error('Course not found');
+    }
+    
+    res.json(course);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Create course
+// @route   POST /api/courses
+// @access  Private/Admin
+const createCourse = async (req, res, next) => {
+  try {
+    const { name, description, duration, totalFees, installments } = req.body;
+    
+    const course = await Course.create({
+      name,
+      description,
+      duration,
+      totalFees,
+      installments,
+      isActive: true
+    });
+    
+    res.status(201).json(course);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update course
+// @route   PUT /api/courses/:id
+// @access  Private/Admin
+const updateCourse = async (req, res, next) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    
+    if (!course) {
+      res.status(404);
+      throw new Error('Course not found');
+    }
+    
+    course.name = req.body.name || course.name;
+    course.description = req.body.description || course.description;
+    course.duration = req.body.duration || course.duration;
+    course.totalFees = req.body.totalFees || course.totalFees;
+    course.installments = req.body.installments || course.installments;
+    course.isActive = req.body.isActive !== undefined ? req.body.isActive : course.isActive;
+    
+    const updatedCourse = await course.save();
+    
+    res.json(updatedCourse);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete course
+// @route   DELETE /api/courses/:id
+// @access  Private/Admin
+const deleteCourse = async (req, res, next) => {
+  try {
+    const course = await Course.findById(req.params.id);
+    
+    if (!course) {
+      res.status(404);
+      throw new Error('Course not found');
+    }
+    
+    // Check if any students are assigned to this course
+    const students = await Student.find({ assignedCourses: course._id });
+    if (students.length > 0) {
+      res.status(400);
+      throw new Error('Cannot delete course with assigned students');
+    }
+    
+    await course.remove();
+    res.json({ message: 'Course removed' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  getCourses,
+  getAllCourses,
+  getCourse,
+  createCourse,
+  updateCourse,
+  deleteCourse
+};
+
+const Fee = require('../models/feeModel');
+const Student = require('../models/studentModel');
+const Course = require('../models/courseModel');
+
+// @desc    Get all fee records
+// @route   GET /api/fees
+// @access  Private/Admin
+const getFees = async (req, res, next) => {
+  try {
+    const fees = await Fee.find()
+      .populate('studentId', 'studentId')
+      .populate('courseId', 'name')
+      .populate('createdBy', 'name')
+      .sort({ dueDate: 1 });
+    
+    res.json(fees);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Create fee record
+// @route   POST /api/fees
+// @access  Private/SalesPerson
+const createFee = async (req, res, next) => {
+  try {
+    const { studentId, courseId, amount, dueDate, paymentMethod, transactionId, notes } = req.body;
+    
+    // Check if student exists
+    const student = await Student.findById(studentId);
+    if (!student) {
+      res.status(404);
+      throw new Error('Student not found');
+    }
+    
+    // Check if course exists
+    const course = await Course.findById(courseId);
+    if (!course) {
+      res.status(404);
+      throw new Error('Course not found');
+    }
+    
+    // Check if student is assigned to the course
+    if (!student.assignedCourses.includes(courseId)) {
+      res.status(400);
+      throw new Error('Student is not assigned to this course');
+    }
+    
+    const fee = await Fee.create({
+      studentId,
+      courseId,
+      amount,
+      dueDate,
+      paymentMethod,
+      transactionId,
+      notes,
+      createdBy: req.user._id,
+      status: 'pending'
+    });
+    
+    res.status(201).json(fee);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update fee record
+// @route   PUT /api/fees/:id
+// @access  Private/SalesPerson
+const updateFee = async (req, res, next) => {
+  try {
+    const fee = await Fee.findById(req.params.id);
+    
+    if (!fee) {
+      res.status(404);
+      throw new Error('Fee record not found');
+    }
+    
+    // Only allow updates to certain fields
+    if (req.body.amount) {
+      fee.amount = req.body.amount;
+    }
+    
+    if (req.body.dueDate) {
+      fee.dueDate = req.body.dueDate;
+    }
+    
+    if (req.body.notes) {
+      fee.notes = req.body.notes;
+    }
+    
+    const updatedFee = await fee.save();
+    
+    res.json(updatedFee);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Record fee payment
+// @route   POST /api/fees/payment
+// @access  Private/SalesPerson
+const recordPayment = async (req, res, next) => {
+  try {
+    const { feeId, paidDate, paymentMethod, transactionId } = req.body;
+    
+    const fee = await Fee.findById(feeId);
+    
+    if (!fee) {
+      res.status(404);
+      throw new Error('Fee record not found');
+    }
+    
+    fee.paidDate = paidDate || new Date();
+    fee.paymentMethod = paymentMethod;
+    fee.transactionId = transactionId;
+    fee.status = 'paid';
+    
+    const updatedFee = await fee.save();
+    
+    res.json(updatedFee);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get pending fees
+// @route   GET /api/fees/pending
+// @access  Private/SalesPerson
+const getPendingFees = async (req, res, next) => {
+  try {
+    const fees = await Fee.find({ status: 'pending' })
+      .populate('studentId', 'studentId')
+      .populate('courseId', 'name')
+      .sort({ dueDate: 1 });
+    
+    res.json(fees);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get overdue fees
+// @route   GET /api/fees/overdue
+// @access  Private/SalesPerson
+const getOverdueFees = async (req, res, next) => {
+  try {
+    const today = new Date();
+    const fees = await Fee.find({ 
+      status: 'overdue',
+      dueDate: { $lte: today }
+    })
+      .populate('studentId', 'studentId')
+      .populate('courseId', 'name')
+      .sort({ dueDate: 1 });
+    
+    res.json(fees);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  getFees,
+  createFee,
+  updateFee,
+  recordPayment,
+  getPendingFees,
+  getOverdueFees
+};
+
+const Student = require('../models/studentModel');
+const User = require('../models/userModel');
+const Course = require('../models/courseModel');
+const Fee = require('../models/feeModel');
+const { generateToken } = require('../utils/generateToken');
+const sendEmail = require('../utils/sendEmail');
+const config = require('../config/config');
+
+// @desc    Get all students
+// @route   GET /api/students
+// @access  Private/Admin
+const getStudents = async (req, res, next) => {
+  try {
+    const students = await Student.find()
+      .populate('userId', 'name email phone')
+      .populate('assignedTrainer', 'name')
+      .populate('salesPerson', 'name')
+      .populate('assignedCourses', 'name');
+    
+    res.json(students);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get single student
+// @route   GET /api/students/:id
+// @access  Private
+const getStudent = async (req, res, next) => {
+  try {
+    const student = await Student.findById(req.params.id)
+      .populate('userId', 'name email phone')
+      .populate('assignedTrainer', 'name')
+      .populate('salesPerson', 'name')
+      .populate('assignedCourses', 'name description duration totalFees');
+    
+    if (!student) {
+      res.status(404);
+      throw new Error('Student not found');
+    }
+    
+    // Check if the requesting user has access to this student
+    if (req.user.role === 'student' && student.userId._id.toString() !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to access this student');
+    }
+    
+    res.json(student);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Register a new student
+// @route   POST /api/students
+// @access  Private/SalesPerson
+const registerStudent = async (req, res, next) => {
+  try {
+    const { name, email, phone, password, assignedCourses, assignedTrainer } = req.body;
+    
+    // Check if user already exists
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      res.status(400);
+      throw new Error('User already exists');
+    }
+    
+    // Create user account
+    const user = await User.create({
+      name,
+      email,
+      phone,
+      password,
+      role: 'student'
+    });
+    
+    // Create student record
+    const student = await Student.create({
+      userId: user._id,
+      salesPerson: req.user._id,
+      assignedCourses,
+      assignedTrainer,
+      trialStartDate: new Date(),
+      trialEndDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+      status: 'trial'
+    });
+    
+    // Send welcome email
+    const message = `
+      <h1>Welcome to CodeHub India!</h1>
+      <p>Your student account has been created successfully.</p>
+      <p>Your Student ID: ${student.studentId}</p>
+      <p>Please complete your registration by paying the ₹2000 registration fee.</p>
+      <p>This gives you access to a 1-week trial period.</p>
+    `;
+    
+    await sendEmail({
+      email: user.email,
+      subject: 'Welcome to CodeHub India',
+      message
+    });
+    
+    res.status(201).json({
+      _id: student._id,
+      studentId: student.studentId,
+      userId: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone
+      },
+      status: student.status,
+      trialStartDate: student.trialStartDate,
+      trialEndDate: student.trialEndDate,
+      registrationFee: student.registrationFee
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update student
+// @route   PUT /api/students/:id
+// @access  Private/Admin
+const updateStudent = async (req, res, next) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    
+    if (!student) {
+      res.status(404);
+      throw new Error('Student not found');
+    }
+    
+    // Update basic info
+    if (req.body.assignedCourses) {
+      student.assignedCourses = req.body.assignedCourses;
+    }
+    
+    if (req.body.assignedTrainer) {
+      student.assignedTrainer = req.body.assignedTrainer;
+    }
+    
+    if (req.body.status) {
+      student.status = req.body.status;
+    }
+    
+    // Update registration fee payment status
+    if (req.body.registrationFee) {
+      if (req.body.registrationFee.paid !== undefined) {
+        student.registrationFee.paid = req.body.registrationFee.paid;
+        student.registrationFee.paidDate = req.body.registrationFee.paid ? new Date() : undefined;
+      }
+      
+      if (req.body.registrationFee.refunded !== undefined) {
+        student.registrationFee.refunded = req.body.registrationFee.refunded;
+        student.registrationFee.refundDate = req.body.registrationFee.refunded ? new Date() : undefined;
+      }
+    }
+    
+    const updatedStudent = await student.save();
+    
+    res.json(updatedStudent);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Handle trial decision
+// @route   POST /api/students/:id/trial-decision
+// @access  Private/SalesPerson
+const handleTrialDecision = async (req, res, next) => {
+  try {
+    const { decision } = req.body;
+    const student = await Student.findById(req.params.id).populate('userId', 'email name');
+    
+    if (!student) {
+      res.status(404);
+      throw new Error('Student not found');
+    }
+    
+    if (student.status !== 'trial') {
+      res.status(400);
+      throw new Error('Student is not in trial period');
+    }
+    
+    if (!student.registrationFee.paid) {
+      res.status(400);
+      throw new Error('Registration fee not paid');
+    }
+    
+    if (decision === 'continue') {
+      // Convert registration fee to course fee credit
+      const course = await Course.findOne({ _id: { $in: student.assignedCourses } });
+      
+      if (!course) {
+        res.status(400);
+        throw new Error('No assigned course found');
+      }
+      
+      // Create a fee adjustment record
+      const fee = await Fee.create({
+        studentId: student._id,
+        courseId: course._id,
+        amount: -2000,
+        dueDate: new Date(),
+        paidDate: new Date(),
+        status: 'paid',
+        paymentMethod: 'registration_adjustment',
+        createdBy: req.user._id
+      });
+      
+      // Update student status
+      student.status = 'active';
+      await student.save();
+      
+      // Send confirmation email
+      const message = `
+        <h1>Welcome to CodeHub India as a full student!</h1>
+        <p>Your trial period has been successfully converted to a full enrollment.</p>
+        <p>Your ₹2000 registration fee has been applied to your course fees.</p>
+      `;
+      
+      await sendEmail({
+        email: student.userId.email,
+        subject: 'Trial Period Conversion',
+        message
+      });
+      
+      res.json({
+        message: 'Student trial converted to active enrollment',
+        feeAdjustment: fee
+      });
+    } else if (decision === 'discontinue') {
+      // Process refund
+      student.status = 'inactive';
+      student.registrationFee.refunded = true;
+      student.registrationFee.refundDate = new Date();
+      await student.save();
+      
+      // Send refund confirmation email
+      const message = `
+        <h1>Your trial period has ended</h1>
+        <p>We're sorry to see you go. Your ₹2000 registration fee will be refunded.</p>
+        <p>Thank you for trying CodeHub India.</p>
+      `;
+      
+      await sendEmail({
+        email: student.userId.email,
+        subject: 'Trial Period Ended',
+        message
+      });
+      
+      res.json({
+        message: 'Student trial discontinued and refund processed'
+      });
+    } else {
+      res.status(400);
+      throw new Error('Invalid decision');
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get student attendance
+// @route   GET /api/students/:id/attendance
+// @access  Private
+const getStudentAttendance = async (req, res, next) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    
+    if (!student) {
+      res.status(404);
+      throw new Error('Student not found');
+    }
+    
+    // Check if the requesting user has access to this student's attendance
+    if (req.user.role === 'student' && student.userId.toString() !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to access this student\'s attendance');
+    }
+    
+    if (req.user.role === 'trainer' && student.assignedTrainer.toString() !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to access this student\'s attendance');
+    }
+    
+    const attendance = await Attendance.find({ studentId: student._id })
+      .populate('courseId', 'name')
+      .populate('trainerId', 'name')
+      .sort({ date: -1 });
+    
+    res.json(attendance);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get student fees
+// @route   GET /api/students/:id/fees
+// @access  Private
+const getStudentFees = async (req, res, next) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    
+    if (!student) {
+      res.status(404);
+      throw new Error('Student not found');
+    }
+    
+    // Check if the requesting user has access to this student's fees
+    if (req.user.role === 'student' && student.userId.toString() !== req.user._id.toString()) {
+      res.status(403);
+      throw new Error('Not authorized to access this student\'s fees');
+    }
+    
+    const fees = await Fee.find({ studentId: student._id })
+      .populate('courseId', 'name totalFees')
+      .populate('createdBy', 'name')
+      .sort({ dueDate: 1 });
+    
+    res.json(fees);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  getStudents,
+  getStudent,
+  registerStudent,
+  updateStudent,
+  handleTrialDecision,
+  getStudentAttendance,
+  getStudentFees
+};
+
+const User = require('../models/userModel');
+const Student = require('../models/studentModel');
+
+// @desc    Get all users
+// @route   GET /api/users
+// @access  Private/SuperAdmin
+const getUsers = async (req, res, next) => {
+  try {
+    const users = await User.find().select('-password');
+    res.json(users);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get single user
+// @route   GET /api/users/:id
+// @access  Private/Admin
+const getUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id).select('-password');
+    
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+    
+    res.json(user);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Create user
+// @route   POST /api/users
+// @access  Private/Admin
+const createUser = async (req, res, next) => {
+  try {
+    const { name, email, phone, password, role } = req.body;
+
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      res.status(400);
+      throw new Error('User already exists');
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      phone,
+      password,
+      role
+    });
+
+    if (user) {
+      res.status(201).json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role
+      });
+    } else {
+      res.status(400);
+      throw new Error('Invalid user data');
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update user
+// @route   PUT /api/users/:id
+// @access  Private/Admin
+const updateUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    user.name = req.body.name || user.name;
+    user.email = req.body.email || user.email;
+    user.phone = req.body.phone || user.phone;
+    user.role = req.body.role || user.role;
+    user.isActive = req.body.isActive !== undefined ? req.body.isActive : user.isActive;
+
+    if (req.body.password) {
+      user.password = req.body.password;
+    }
+
+    const updatedUser = await user.save();
+
+    res.json({
+      _id: updatedUser._id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      phone: updatedUser.phone,
+      role: updatedUser.role,
+      isActive: updatedUser.isActive
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete user
+// @route   DELETE /api/users/:id
+// @access  Private/SuperAdmin
+const deleteUser = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    // Check if user is a student
+    const student = await Student.findOne({ userId: user._id });
+    if (student) {
+      res.status(400);
+      throw new Error('Cannot delete user with associated student record');
+    }
+
+    await user.remove();
+    res.json({ message: 'User removed' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get user profile
+// @route   GET /api/users/profile
+// @access  Private
+const getUserProfile = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id).select('-password');
+    
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+    
+    res.json(user);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update user profile
+// @route   PUT /api/users/profile
+// @access  Private
+const updateUserProfile = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+
+    user.name = req.body.name || user.name;
+    user.email = req.body.email || user.email;
+    user.phone = req.body.phone || user.phone;
+
+    if (req.body.password) {
+      user.password = req.body.password;
+    }
+
+    const updatedUser = await user.save();
+
+    res.json({
+      _id: updatedUser._id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      phone: updatedUser.phone,
+      role: updatedUser.role
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  getUsers,
+  getUser,
+  createUser,
+  updateUser,
+  deleteUser,
+  getUserProfile,
+  updateUserProfile
+};
+
+
+const jwt = require('jsonwebtoken');
+const User = require('../models/userModel');
+const config = require('../config/config');
+
+const protect = async (req, res, next) => {
+  let token;
+  
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    try {
+      token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(token, config.jwt.secret);
+      req.user = await User.findById(decoded.id).select('-password');
+      next();
+    } catch (error) {
+      console.error(error);
+      res.status(401);
+      throw new Error('Not authorized, token failed');
+    }
+  }
+  
+  if (!token) {
+    res.status(401);
+    throw new Error('Not authorized, no token');
+  }
+};
+
+const admin = (req, res, next) => {
+  if (req.user && req.user.role === 'admin') {
+    next();
+  } else {
+    res.status(403);
+    throw new Error('Not authorized as an admin');
+  }
+};
+
+const superAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'super_admin') {
+    next();
+  } else {
+    res.status(403);
+    throw new Error('Not authorized as a super admin');
+  }
+};
+
+const roleBasedAccess = (roles = []) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      res.status(401);
+      throw new Error('Not authenticated');
+    }
+    
+    if (roles.includes(req.user.role)) {
+      next();
+    } else {
+      res.status(403);
+      throw new Error(`Not authorized. Required roles: ${roles.join(', ')}`);
+    }
+  };
+};
+
+module.exports = { protect, admin, superAdmin, roleBasedAccess };
+
+const errorHandler = (err, req, res, next) => {
+  console.error(err.stack);
+  
+  const statusCode = err.statusCode || 500;
+  const message = err.message || 'Internal Server Error';
+  
+  res.status(statusCode).json({
+    success: false,
+    statusCode,
+    message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+};
+
+const notFound = (req, res, next) => {
+  const error = new Error(`Not Found - ${req.originalUrl}`);
+  res.status(404);
+  next(error);
+};
+
+module.exports = { errorHandler, notFound };
+
+const mongoose = require('mongoose');
+
+const attendanceSchema = new mongoose.Schema({
+  studentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Student',
+    required: true
+  },
+  courseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Course',
+    required: true
+  },
+  trainerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  date: {
+    type: Date,
+    required: true,
+    default: Date.now
+  },
+  status: {
+    type: String,
+    enum: ['present', 'absent', 'late'],
+    required: true
+  },
+  markedAt: {
+    type: Date,
+    default: Date.now
+  },
+  notes: {
+    type: String
+  }
+});
+
+module.exports = mongoose.model('Attendance', attendanceSchema);
+
+const mongoose = require('mongoose');
+
+const courseSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Please add a course name']
+  },
+  description: {
+    type: String,
+    required: [true, 'Please add a description']
+  },
+  duration: {
+    type: Number,
+    required: [true, 'Please add duration in weeks']
+  },
+  totalFees: {
+    type: Number,
+    required: [true, 'Please add total fees']
+  },
+  installments: [{
+    amount: {
+      type: Number,
+      required: true
+    },
+    dueWeek: {
+      type: Number,
+      required: true
+    }
+  }],
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+module.exports = mongoose.model('Course', courseSchema);
+
+const mongoose = require('mongoose');
+
+const feeSchema = new mongoose.Schema({
+  studentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Student',
+    required: true
+  },
+  courseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Course',
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true
+  },
+  dueDate: {
+    type: Date,
+    required: true
+  },
+  paidDate: {
+    type: Date
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'paid', 'overdue'],
+    default: 'pending'
+  },
+  paymentMethod: {
+    type: String
+  },
+  transactionId: {
+    type: String
+  },
+  notes: {
+    type: String
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }
+}, {
+  timestamps: true
+});
+
+// Update status to overdue if due date has passed
+feeSchema.pre('save', function(next) {
+  if (this.dueDate < new Date() && this.status === 'pending') {
+    this.status = 'overdue';
+  }
+  next();
+});
+
+module.exports = mongoose.model('Fee', feeSchema);
+
+const mongoose = require('mongoose');
+
+const studentSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  studentId: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  registrationDate: {
+    type: Date,
+    default: Date.now
+  },
+  trialStartDate: {
+    type: Date
+  },
+  trialEndDate: {
+    type: Date
+  },
+  status: {
+    type: String,
+    enum: ['trial', 'active', 'inactive', 'graduated'],
+    default: 'trial'
+  },
+  assignedCourses: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Course'
+  }],
+  assignedTrainer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  salesPerson: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  registrationFee: {
+    amount: {
+      type: Number,
+      default: 2000
+    },
+    paid: {
+      type: Boolean,
+      default: false
+    },
+    paidDate: {
+      type: Date
+    },
+    refunded: {
+      type: Boolean,
+      default: false
+    },
+    refundDate: {
+      type: Date
+    }
+  }
+}, {
+  timestamps: true
+});
+
+// Generate student ID before saving
+studentSchema.pre('save', function(next) {
+  if (!this.studentId) {
+    const year = new Date().getFullYear().toString().slice(-2);
+    const random = Math.floor(1000 + Math.random() * 9000);
+    this.studentId = `STU${year}${random}`;
+  }
+  next();
+});
+
+module.exports = mongoose.model('Student', studentSchema);
+
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Please add a name']
+  },
+  email: {
+    type: String,
+    required: [true, 'Please add an email'],
+    unique: true,
+    match: [
+      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+      'Please add a valid email'
+    ]
+  },
+  phone: {
+    type: String,
+    required: [true, 'Please add a phone number']
+  },
+  role: {
+    type: String,
+    enum: ['super_admin', 'admin', 'sales_person', 'trainer', 'student'],
+    default: 'student'
+  },
+  password: {
+    type: String,
+    required: [true, 'Please add a password'],
+    minlength: 6,
+    select: false
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+// Encrypt password using bcrypt
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) {
+    next();
+  }
+  
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Match user entered password to hashed password in database
+userSchema.methods.matchPassword = async function(enteredPassword) {
+  try {
+    return await bcrypt.compare(enteredPassword, this.password);
+  } catch (error) {
+    throw new Error('Password comparison failed');
+  }
+};
+
+module.exports = mongoose.model('User', userSchema);
+
+const express = require('express');
+const router = express.Router();
+const { protect, roleBasedAccess } = require('../middleware/authMiddleware');
+const attendanceController = require('../controllers/attendanceController');
+
+// @route   GET /api/attendance
+// @desc    Get all attendance records
+// @access  Private/Admin
+router.get('/', protect, roleBasedAccess(['super_admin', 'admin']), attendanceController.getAttendance);
+
+// @route   POST /api/attendance
+// @desc    Create attendance record
+// @access  Private/Trainer
+router.post('/', protect, roleBasedAccess(['trainer']), attendanceController.createAttendance);
+
+// @route   PUT /api/attendance/:id
+// @desc    Update attendance record
+// @access  Private/Trainer
+router.put('/:id', protect, roleBasedAccess(['trainer']), attendanceController.updateAttendance);
+
+// @route   POST /api/attendance/bulk
+// @desc    Bulk create attendance records
+// @access  Private/Trainer
+router.post('/bulk', protect, roleBasedAccess(['trainer']), attendanceController.createBulkAttendance);
+
+// @route   GET /api/attendance/student/:studentId
+// @desc    Get attendance for a student
+// @access  Private
+router.get('/student/:studentId', protect, attendanceController.getStudentAttendance);
+
+// @route   GET /api/attendance/trainer/:trainerId
+// @desc    Get attendance marked by a trainer
+// @access  Private/Admin
+router.get('/trainer/:trainerId', protect, roleBasedAccess(['super_admin', 'admin']), attendanceController.getTrainerAttendance);
+
+module.exports = router;
+
+const express = require('express');
+const router = express.Router();
+const { check } = require('express-validator');
+const authController = require('../controllers/authController');
+
+// @route   POST /api/auth/register
+// @desc    Register a new user
+// @access  Public
+router.post(
+  '/register',
+  [
+    check('name', 'Name is required').not().isEmpty(),
+    check('email', 'Please include a valid email').isEmail(),
+    check('phone', 'Phone number is required').not().isEmpty(),
+    check('password', 'Please enter a password with 6 or more characters').isLength({ min: 6 })
+  ],
+  authController.registerUser
+);
+
+// @route   POST /api/auth/login
+// @desc    Authenticate user & get token
+// @access  Public
+router.post(
+  '/login',
+  [
+    check('email', 'Please include a valid email').isEmail(),
+    check('password', 'Password is required').exists()
+  ],
+  authController.loginUser
+);
+
+// @route   POST /api/auth/refresh
+// @desc    Refresh token
+// @access  Public
+router.post('/refresh', authController.refreshToken);
+
+// @route   POST /api/auth/forgot-password
+// @desc    Forgot password
+// @access  Public
+router.post(
+  '/forgot-password',
+  [check('email', 'Please include a valid email').isEmail()],
+  authController.forgotPassword
+);
+
+// @route   PUT /api/auth/reset-password/:token
+// @desc    Reset password
+// @access  Public
+router.put(
+  '/reset-password/:token',
+  [check('password', 'Please enter a password with 6 or more characters').isLength({ min: 6 })],
+  authController.resetPassword
+);
+
+module.exports = router;
+
+const express = require('express');
+const router = express.Router();
+const { protect, roleBasedAccess } = require('../middleware/authMiddleware');
+const courseController = require('../controllers/courseController');
+
+// @route   GET /api/courses
+// @desc    Get all active courses
+// @access  Public
+router.get('/', courseController.getCourses);
+
+// @route   GET /api/courses/all
+// @desc    Get all courses (including inactive)
+// @access  Private/Admin
+router.get('/all', protect, roleBasedAccess(['super_admin', 'admin']), courseController.getAllCourses);
+
+// @route   GET /api/courses/:id
+// @desc    Get single course
+// @access  Public
+router.get('/:id', courseController.getCourse);
+
+// @route   POST /api/courses
+// @desc    Create course
+// @access  Private/Admin
+router.post('/', protect, roleBasedAccess(['super_admin', 'admin']), courseController.createCourse);
+
+// @route   PUT /api/courses/:id
+// @desc    Update course
+// @access  Private/Admin
+router.put('/:id', protect, roleBasedAccess(['super_admin', 'admin']), courseController.updateCourse);
+
+// @route   DELETE /api/courses/:id
+// @desc    Delete course
+// @access  Private/Admin
+router.delete('/:id', protect, roleBasedAccess(['super_admin', 'admin']), courseController.deleteCourse);
+
+module.exports = router;
+
+const express = require('express');
+const router = express.Router();
+const { protect, roleBasedAccess } = require('../middleware/authMiddleware');
+const feeController = require('../controllers/feeController');
+
+// @route   GET /api/fees
+// @desc    Get all fee records
+// @access  Private/Admin
+router.get('/', protect, roleBasedAccess(['super_admin', 'admin']), feeController.getFees);
+
+// @route   POST /api/fees
+// @desc    Create fee record
+// @access  Private/SalesPerson
+router.post('/', protect, roleBasedAccess(['sales_person', 'admin']), feeController.createFee);
+
+// @route   PUT /api/fees/:id
+// @desc    Update fee record
+// @access  Private/SalesPerson
+router.put('/:id', protect, roleBasedAccess(['sales_person', 'admin']), feeController.updateFee);
+
+// @route   POST /api/fees/payment
+// @desc    Record fee payment
+// @access  Private/SalesPerson
+router.post('/payment', protect, roleBasedAccess(['sales_person', 'admin']), feeController.recordPayment);
+
+// @route   GET /api/fees/pending
+// @desc    Get pending fees
+// @access  Private/SalesPerson
+router.get('/pending', protect, roleBasedAccess(['sales_person', 'admin']), feeController.getPendingFees);
+
+// @route   GET /api/fees/overdue
+// @desc    Get overdue fees
+// @access  Private/SalesPerson
+router.get('/overdue', protect, roleBasedAccess(['sales_person', 'admin']), feeController.getOverdueFees);
+
+module.exports = router;
+
+const express = require('express');
+const router = express.Router();
+const { protect, roleBasedAccess } = require('../middleware/authMiddleware');
+const studentController = require('../controllers/studentController');
+
+// @route   GET /api/students
+// @desc    Get all students
+// @access  Private/Admin
+router.get('/', protect, roleBasedAccess(['super_admin', 'admin', 'sales_person', 'trainer']), studentController.getStudents);
+
+// @route   GET /api/students/:id
+// @desc    Get single student
+// @access  Private
+router.get('/:id', protect, studentController.getStudent);
+
+// @route   POST /api/students
+// @desc    Register a new student
+// @access  Private/SalesPerson
+router.post('/', protect, roleBasedAccess(['sales_person', 'admin']), studentController.registerStudent);
+
+// @route   PUT /api/students/:id
+// @desc    Update student
+// @access  Private/Admin
+router.put('/:id', protect, roleBasedAccess(['admin', 'sales_person']), studentController.updateStudent);
+
+// @route   POST /api/students/:id/trial-decision
+// @desc    Handle trial decision
+// @access  Private/SalesPerson
+router.post(
+  '/:id/trial-decision',
+  protect,
+  roleBasedAccess(['sales_person', 'admin']),
+  studentController.handleTrialDecision
+);
+
+// @route   GET /api/students/:id/attendance
+// @desc    Get student attendance
+// @access  Private
+router.get('/:id/attendance', protect, studentController.getStudentAttendance);
+
+// @route   GET /api/students/:id/fees
+// @desc    Get student fees
+// @access  Private
+router.get('/:id/fees', protect, studentController.getStudentFees);
+
+module.exports = router;
+
+const express = require('express');
+const router = express.Router();
+const { protect, roleBasedAccess } = require('../middleware/authMiddleware');
+const userController = require('../controllers/userController');
+
+// @route   GET /api/users
+// @desc    Get all users
+// @access  Private/SuperAdmin
+router.get('/', protect, roleBasedAccess(['super_admin', 'admin']), userController.getUsers);
+
+// @route   GET /api/users/:id
+// @desc    Get single user
+// @access  Private/Admin
+router.get('/:id', protect, roleBasedAccess(['super_admin', 'admin']), userController.getUser);
+
+// @route   POST /api/users
+// @desc    Create user
+// @access  Private/Admin
+router.post('/', protect, roleBasedAccess(['super_admin', 'admin']), userController.createUser);
+
+// @route   PUT /api/users/:id
+// @desc    Update user
+// @access  Private/Admin
+router.put('/:id', protect, roleBasedAccess(['super_admin', 'admin']), userController.updateUser);
+
+// @route   DELETE /api/users/:id
+// @desc    Delete user
+// @access  Private/SuperAdmin
+router.delete('/:id', protect, roleBasedAccess(['super_admin']), userController.deleteUser);
+
+// @route   GET /api/users/profile
+// @desc    Get user profile
+// @access  Private
+router.get('/profile', protect, userController.getUserProfile);
+
+// @route   PUT /api/users/profile
+// @desc    Update user profile
+// @access  Private
+router.put('/profile', protect, userController.updateUserProfile);
+
+module.exports = router;
+
+const jwt = require('jsonwebtoken');
+const config = require('../config/config');
+
+const generateToken = (id) => {
+  return jwt.sign({ id }, config.jwt.secret, {
+    expiresIn: config.jwt.expiration
+  });
+};
+
+const generateRefreshToken = (id) => {
+  return jwt.sign({ id }, config.jwt.secret, {
+    expiresIn: config.jwt.refreshExpiration
+  });
+};
+
+module.exports = { generateToken, generateRefreshToken };
+
+const nodemailer = require('nodemailer');
+const config = require('../config/config');
+
+const sendEmail = async (options) => {
+  // Create a transporter
+  const transporter = nodemailer.createTransport({
+    host: config.smtp.host,
+    port: config.smtp.port,
+    auth: {
+      user: config.smtp.user,
+      pass: config.smtp.pass
+    }
+  });
+
+  // Define email options
+  const mailOptions = {
+    from: 'CodeHub ERP <noreply@codehubindia.in>',
+    to: options.email,
+    subject: options.subject,
+    text: options.message
+  };
+
+  // Send email
+  await transporter.sendMail(mailOptions);
+};
+
+module.exports = sendEmail;
+
+{
+  "name": "codehub-erp-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "server": "nodemon server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.1",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.16.4",
+    "morgan": "^1.10.1",
+    "nodemailer": "^7.0.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
+
+
+require('dotenv').config();
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
+const { errorHandler } = require('./src/middleware/errorMiddleware');
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(helmet());
+app.use(morgan('dev'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use(limiter);
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+// Routes
+app.use('/api/auth', require('./src/routes/authRoutes'));
+app.use('/api/users', require('./src/routes/userRoutes'));
+app.use('/api/students', require('./src/routes/studentRoutes'));
+app.use('/api/courses', require('./src/routes/courseRoutes'));
+app.use('/api/attendance', require('./src/routes/attendanceRoutes'));
+app.use('/api/fees', require('./src/routes/feeRoutes'));
+
+// Error handling middleware
+app.use(errorHandler);
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
