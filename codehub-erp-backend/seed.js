@@ -83,9 +83,12 @@ const seedDatabase = async () => {
 
     // Create batches
     const batches = await Batch.create([
-      { name: 'FS-06AM', slot: '06:00-07:00', courseId: courses[0]._id, trainerId: trainer._id },
+      { name: 'FS-05PM', slot: '17:00-18:00', courseId: courses[0]._id, trainerId: trainer._id },
+      { name: 'FS-07PM', slot: '19:00-20:00', courseId: courses[0]._id, trainerId: trainer._id },
+      { name: 'FS-06PM', slot: '18:00-19:00', courseId: courses[0]._id, trainerId: trainer._id },
       { name: 'FS-07AM', slot: '07:00-08:00', courseId: courses[0]._id, trainerId: trainer._id },
-      { name: 'DS-06PM', slot: '18:00-19:00', courseId: courses[1]._id, trainerId: trainer._id }
+      { name: 'FS-08AM', slot: '08:00-09:00', courseId: courses[0]._id, trainerId: trainer._id },
+      { name: 'FS-09AM', slot: '09:00-10:00', courseId: courses[0]._id, trainerId: trainer._id }
     ]);
 
     // Create sample students in batches
@@ -98,7 +101,7 @@ const seedDatabase = async () => {
     await Student.create([
       { userId: studentUsers[0]._id, salesPerson: salesPerson._id, assignedCourses: [courses[0]._id], assignedTrainer: trainer._id, batchId: batches[0]._id, status: 'active' },
       { userId: studentUsers[1]._id, salesPerson: salesPerson._id, assignedCourses: [courses[0]._id], assignedTrainer: trainer._id, batchId: batches[1]._id, status: 'active' },
-      { userId: studentUsers[2]._id, salesPerson: salesPerson._id, assignedCourses: [courses[1]._id], assignedTrainer: trainer._id, batchId: batches[2]._id, status: 'active' }
+      { userId: studentUsers[2]._id, salesPerson: salesPerson._id, assignedCourses: [courses[0]._id], assignedTrainer: trainer._id, batchId: batches[2]._id, status: 'active' }
     ]);
 
     console.log('Database seeded successfully!');
