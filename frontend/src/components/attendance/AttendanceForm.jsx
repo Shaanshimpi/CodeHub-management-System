@@ -26,6 +26,7 @@ const AttendanceForm = ({ bulk }) => {
   const { user } = useSelector(state => state.auth);
   const [studentCourses, setStudentCourses] = useState([]);
   const { students } = useSelector(state => state.students);
+  const [batchSlot, setBatchSlot] = useState('');
   const { courses } = useSelector(state => state.courses);
 
   useEffect(() => {
@@ -87,6 +88,12 @@ const AttendanceForm = ({ bulk }) => {
     });
   }
 
+  const filteredStudents = students.filter((s) => {
+    const trainerMatch = !user?._id || !s.assignedTrainer || s.assignedTrainer === user._id || s.assignedTrainer?._id === user._id
+    const batchMatch = !batchSlot || s.batchSlot === batchSlot
+    return trainerMatch && batchMatch
+  })
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -136,6 +143,20 @@ const AttendanceForm = ({ bulk }) => {
           {!bulk && (
             <>
               <FormControl fullWidth margin="normal">
+                <InputLabel>Batch</InputLabel>
+                <Select
+                  name="batchSlot"
+                  value={batchSlot}
+                  onChange={(e) => setBatchSlot(e.target.value)}
+                  label="Batch"
+                >
+                  <MenuItem value=""><em>All Batches</em></MenuItem>
+                  {['06:00-07:00','07:00-08:00','08:00-09:00','09:00-10:00','10:00-11:00','11:00-12:00','12:00-13:00','13:00-14:00','14:00-15:00','15:00-16:00','16:00-17:00','17:00-18:00','18:00-19:00','19:00-20:00','20:00-21:00'].map((b) => (
+                    <MenuItem key={b} value={b}>{b}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth margin="normal">
                 <InputLabel>Student</InputLabel>
                 <Select
                   name="studentId"
@@ -144,7 +165,7 @@ const AttendanceForm = ({ bulk }) => {
                   label="Student"
                   required
                 >
-                  {students.map(student => (
+                  {filteredStudents.map(student => (
                     <MenuItem key={student._id} value={student._id}>
                       {student.userId.name}
                     </MenuItem>
