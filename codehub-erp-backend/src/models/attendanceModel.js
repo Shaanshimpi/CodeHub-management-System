@@ -6,6 +6,10 @@ const attendanceSchema = new mongoose.Schema({
     ref: 'Student',
     required: true
   },
+  batchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Batch'
+  },
   courseId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Course',

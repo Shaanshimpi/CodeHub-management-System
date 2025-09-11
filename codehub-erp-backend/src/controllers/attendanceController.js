@@ -6,8 +6,13 @@ const Student = require('../models/studentModel');
 // @access  Private/Admin
 const getAttendance = async (req, res, next) => {
   try {
-    const attendance = await Attendance.find()
-      .populate('studentId', 'studentId')
+    const filter = {};
+    if (req.query.batchId) {
+      const studentsInBatch = await Student.find({ batchId: req.query.batchId }).select('_id');
+      filter.studentId = { $in: studentsInBatch.map(s => s._id) };
+    }
+    const attendance = await Attendance.find(filter)
+      .populate('studentId', 'studentId batchId')
       .populate('courseId', 'name')
       .populate('trainerId', 'name');
     
@@ -44,6 +49,7 @@ const createAttendance = async (req, res, next) => {
     
     const attendance = await Attendance.create({
       studentId,
+      batchId: student.batchId,
       courseId,
       trainerId: req.user._id,
       date: new Date(),
@@ -91,11 +97,17 @@ const updateAttendance = async (req, res, next) => {
 // @access  Private/Trainer
 const createBulkAttendance = async (req, res, next) => {
   try {
-    const { date, records } = req.body;
+    const { date, records, batchId, courseId, status, notes } = req.body;
     
-    // Validate all students are assigned to the trainer
-    const studentIds = records.map(record => record.studentId);
-    const students = await Student.find({ _id: { $in: studentIds } });
+    let students = [];
+    let payloadRecords = records;
+    if (batchId) {
+      students = await Student.find({ batchId });
+      payloadRecords = students.map(student => ({ studentId: student._id, courseId, status, notes }));
+    } else {
+      const studentIds = records.map(record => record.studentId);
+      students = await Student.find({ _id: { $in: studentIds } });
+    }
     
     for (const student of students) {
       if (student.assignedTrainer.toString() !== req.user._id.toString()) {
@@ -104,9 +116,9 @@ const createBulkAttendance = async (req, res, next) => {
       }
     }
     
-    // Create attendance records
-    const attendanceRecords = records.map(record => ({
+    const attendanceRecords = payloadRecords.map(record => ({
       studentId: record.studentId,
+      batchId,
       courseId: record.courseId,
       trainerId: req.user._id,
       date: new Date(date),

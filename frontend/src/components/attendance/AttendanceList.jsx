@@ -4,13 +4,15 @@ import { Link } from 'react-router-dom'
 import { DataGrid } from '@mui/x-data-grid'
 import { Button, Box, Typography, Chip, FormControl, InputLabel, Select, MenuItem, TextField } from '@mui/material'
 import { getAttendance } from '../../store/slices/attendanceSlice'
+import batchService from '../../api/batches'
 
 const AttendanceList = () => {
   const dispatch = useDispatch()
   const { attendance, loading } = useSelector(state => state.attendance)
   const { user } = useSelector(state => state.auth)
 
-  const [filters, setFilters] = useState({ batchSlot: '', startDate: '', endDate: '' })
+  const [filters, setFilters] = useState({ batchId: '', startDate: '', endDate: '' })
+  const [batches, setBatches] = useState([])
 
   useEffect(() => {
     const params = { ...filters }
@@ -20,11 +22,14 @@ const AttendanceList = () => {
     dispatch(getAttendance(params))
   }, [dispatch, user, filters])
 
-  const batchOptions = [
-    '06:00-07:00','07:00-08:00','08:00-09:00','09:00-10:00','10:00-11:00','11:00-12:00',
-    '12:00-13:00','13:00-14:00','14:00-15:00','15:00-16:00','16:00-17:00','17:00-18:00',
-    '18:00-19:00','19:00-20:00','20:00-21:00'
-  ]
+  useEffect(() => {
+    (async () => {
+      try {
+        const all = await batchService.getBatches()
+        setBatches(all)
+      } catch (e) {}
+    })()
+  }, [])
 
   const columns = [
     { field: 'date', headerName: 'Date', width: 150,
@@ -78,17 +83,17 @@ const AttendanceList = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, alignItems: 'center' }}>
         <Typography variant="h4">Attendance Records</Typography>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel id="batchSlot-label">Batch</InputLabel>
+          <FormControl size="small" sx={{ minWidth: 220 }}>
+            <InputLabel id="batchId-label">Batch</InputLabel>
             <Select
-              labelId="batchSlot-label"
-              value={filters.batchSlot}
+              labelId="batchId-label"
+              value={filters.batchId}
               label="Batch"
-              onChange={(e) => setFilters((prev) => ({ ...prev, batchSlot: e.target.value }))}
+              onChange={(e) => setFilters((prev) => ({ ...prev, batchId: e.target.value }))}
             >
               <MenuItem value=""><em>All Batches</em></MenuItem>
-              {batchOptions.map((b) => (
-                <MenuItem key={b} value={b}>{b}</MenuItem>
+              {batches.map((b) => (
+                <MenuItem key={b._id} value={b._id}>{b.name} ({b.slot})</MenuItem>
               ))}
             </Select>
           </FormControl>

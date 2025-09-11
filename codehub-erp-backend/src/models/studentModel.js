@@ -33,6 +33,10 @@ const studentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  batchId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Batch'
+  },
   salesPerson: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
