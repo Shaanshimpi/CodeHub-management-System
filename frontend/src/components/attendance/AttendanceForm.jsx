@@ -16,6 +16,8 @@ import {
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers';
 import { createAttendance, updateAttendance, getAttendanceRecord } from '../../store/slices/attendanceSlice';
+import batchService from '../../api/batches';
+import attendanceApi from '../../api/attendance';
 import { getStudent, getStudents } from '../../store/slices/studentSlice';
 
 const AttendanceForm = ({ bulk }) => {
@@ -26,11 +28,18 @@ const AttendanceForm = ({ bulk }) => {
   const { user } = useSelector(state => state.auth);
   const [studentCourses, setStudentCourses] = useState([]);
   const { students } = useSelector(state => state.students);
-  const [batchSlot, setBatchSlot] = useState('');
+  const [batchId, setBatchId] = useState('');
+  const [batches, setBatches] = useState([]);
   const { courses } = useSelector(state => state.courses);
 
   useEffect(() => {
     dispatch(getStudents())
+    ;(async () => {
+      try {
+        const all = await batchService.getBatches();
+        setBatches(all);
+      } catch (e) {}
+    })()
   }, [dispatch]);
   console.log("ssssss",students);
   const [formData, setFormData] = useState({
@@ -90,7 +99,7 @@ const AttendanceForm = ({ bulk }) => {
 
   const filteredStudents = students.filter((s) => {
     const trainerMatch = !user?._id || !s.assignedTrainer || s.assignedTrainer === user._id || s.assignedTrainer?._id === user._id
-    const batchMatch = !batchSlot || s.batchSlot === batchSlot
+    const batchMatch = !batchId || (s.batchId && (s.batchId === batchId || s.batchId?._id === batchId))
     return trainerMatch && batchMatch
   })
 
@@ -145,14 +154,14 @@ const AttendanceForm = ({ bulk }) => {
               <FormControl fullWidth margin="normal">
                 <InputLabel>Batch</InputLabel>
                 <Select
-                  name="batchSlot"
-                  value={batchSlot}
-                  onChange={(e) => setBatchSlot(e.target.value)}
+                  name="batchId"
+                  value={batchId}
+                  onChange={(e) => setBatchId(e.target.value)}
                   label="Batch"
                 >
                   <MenuItem value=""><em>All Batches</em></MenuItem>
-                  {['06:00-07:00','07:00-08:00','08:00-09:00','09:00-10:00','10:00-11:00','11:00-12:00','12:00-13:00','13:00-14:00','14:00-15:00','15:00-16:00','16:00-17:00','17:00-18:00','18:00-19:00','19:00-20:00','20:00-21:00'].map((b) => (
-                    <MenuItem key={b} value={b}>{b}</MenuItem>
+                  {batches.map((b) => (
+                    <MenuItem key={b._id} value={b._id}>{b.name} ({b.slot})</MenuItem>
                   ))}
                 </Select>
               </FormControl>

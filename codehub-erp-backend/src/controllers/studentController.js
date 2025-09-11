@@ -1,4 +1,5 @@
 const Student = require('../models/studentModel');
+const Attendance = require('../models/attendanceModel');
 const User = require('../models/userModel');
 const Course = require('../models/courseModel');
 const Fee = require('../models/feeModel');
@@ -12,9 +13,14 @@ const { default: mongoose } = require('mongoose');
 // @access  Private/Admin
 const getStudents = async (req, res, next) => {
   try {
-    const students = await Student.find()
+    const query = {};
+    if (req.query.batchId) {
+      query.batchId = req.query.batchId;
+    }
+    const students = await Student.find(query)
       .populate('userId', 'name email phone')
       .populate('assignedTrainer', 'name')
+      .populate('batchId', 'name slot')
       .populate('salesPerson', 'name')
       .populate('assignedCourses', 'name');
     
@@ -32,6 +38,7 @@ const getStudent = async (req, res, next) => {
     const student = await Student.findById(req.params.id)
       .populate('userId', 'name email phone')
       .populate('assignedTrainer', 'name')
+      .populate('batchId', 'name slot')
       .populate('salesPerson', 'name')
       .populate('assignedCourses', 'name description duration totalFees');
     
@@ -60,7 +67,7 @@ const registerStudent = async (req, res, next) => {
   session.startTransaction();
   
   try {
-    const { name, email, phone, password, assignedCourses, assignedTrainer } = req.body;
+    const { name, email, phone, password, assignedCourses, assignedTrainer, batchId } = req.body;
     
     // Check if user already exists
     const userExists = await User.findOne({ email }).session(session);
@@ -87,6 +94,7 @@ const registerStudent = async (req, res, next) => {
       salesPerson: req.user._id,
       assignedCourses,
       assignedTrainer,
+      batchId,
       trialStartDate: new Date(),
       trialEndDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
       status: 'trial'
@@ -150,6 +158,9 @@ const updateStudent = async (req, res, next) => {
     
     if (req.body.assignedTrainer) {
       student.assignedTrainer = req.body.assignedTrainer;
+    }
+    if (req.body.batchId) {
+      student.batchId = req.body.batchId;
     }
     
     if (req.body.status) {

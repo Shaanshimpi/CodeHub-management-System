@@ -27,12 +27,18 @@ const getStudentAttendance = async (studentId) => {
   return response.data
 }
 
+const createBulkAttendance = async (payload) => {
+  const response = await axios.post(`/api/attendance/bulk`, payload)
+  return response.data
+}
+
 const attendanceService = {
   getAttendance,
   getAttendanceRecord,
   createAttendance,
   updateAttendance,
-  getStudentAttendance
+  getStudentAttendance,
+  createBulkAttendance
 }
 
 export default attendanceService

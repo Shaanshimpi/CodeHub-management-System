@@ -2,6 +2,8 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('./src/models/userModel');
 const Course = require('./src/models/courseModel');
+const Batch = require('./src/models/batchModel');
+const Student = require('./src/models/studentModel');
 
 const seedDatabase = async () => {
   try {
@@ -12,6 +14,8 @@ const seedDatabase = async () => {
     // Clear existing data (optional)
     await User.deleteMany({});
     await Course.deleteMany({});
+    await Batch.deleteMany({});
+    await Student.deleteMany({});
 
     // Create super admin
     const superAdmin = await User.create({
@@ -75,6 +79,26 @@ const seedDatabase = async () => {
           { amount: 15000, dueWeek: 20 }
         ]
       }
+    ]);
+
+    // Create batches
+    const batches = await Batch.create([
+      { name: 'FS-06AM', slot: '06:00-07:00', courseId: courses[0]._id, trainerId: trainer._id },
+      { name: 'FS-07AM', slot: '07:00-08:00', courseId: courses[0]._id, trainerId: trainer._id },
+      { name: 'DS-06PM', slot: '18:00-19:00', courseId: courses[1]._id, trainerId: trainer._id }
+    ]);
+
+    // Create sample students in batches
+    const studentUsers = await User.create([
+      { name: 'Alice', email: 'alice@codehub.in', phone: '9000000001', password: 'student123', role: 'student', salesPerson: salesPerson._id },
+      { name: 'Bob', email: 'bob@codehub.in', phone: '9000000002', password: 'student123', role: 'student', salesPerson: salesPerson._id },
+      { name: 'Charlie', email: 'charlie@codehub.in', phone: '9000000003', password: 'student123', role: 'student', salesPerson: salesPerson._id }
+    ]);
+
+    await Student.create([
+      { userId: studentUsers[0]._id, salesPerson: salesPerson._id, assignedCourses: [courses[0]._id], assignedTrainer: trainer._id, batchId: batches[0]._id, status: 'active' },
+      { userId: studentUsers[1]._id, salesPerson: salesPerson._id, assignedCourses: [courses[0]._id], assignedTrainer: trainer._id, batchId: batches[1]._id, status: 'active' },
+      { userId: studentUsers[2]._id, salesPerson: salesPerson._id, assignedCourses: [courses[1]._id], assignedTrainer: trainer._id, batchId: batches[2]._id, status: 'active' }
     ]);
 
     console.log('Database seeded successfully!');

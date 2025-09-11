@@ -10,6 +10,7 @@ import { DatePicker } from '@mui/x-date-pickers';
 import { createStudent, updateStudent, getStudent } from '../../store/slices/studentSlice';
 import { getCourses } from '../../store/slices/courseSlice';
 import { getUsers } from '../../store/slices/userSlice';
+import batchService from '../../api/batches';
 
 const StudentForm = () => {
   const { id } = useParams();
@@ -21,6 +22,8 @@ const StudentForm = () => {
   const { users } = useSelector(state => state.users);
   
   const trainers = users.filter(user => user.role === 'trainer');
+  const batches = useSelector(state => state.batches?.batches || []);
+  const { getBatches } = require('../../api/batches');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -29,16 +32,24 @@ const StudentForm = () => {
     password: '',
     assignedCourses: [],
     assignedTrainer: '',
+    batchId: '',
     trialStartDate: new Date(),
     trialEndDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
 
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
+  const [localBatches, setLocalBatches] = useState([]);
 
   useEffect(() => {
     dispatch(getUsers());
     dispatch(getCourses());
+    (async () => {
+      try {
+        const all = await batchService.getBatches();
+        setLocalBatches(all);
+      } catch (e) {}
+    })();
   }, [dispatch]);
 
   useEffect(() => {
@@ -56,6 +67,7 @@ const StudentForm = () => {
         password: '',
         assignedCourses: currentStudent.assignedCourses || [],
         assignedTrainer: currentStudent.assignedTrainer || '',
+        batchId: currentStudent.batchId?._id || '',
         trialStartDate: new Date(currentStudent.trialStartDate) || new Date(),
         trialEndDate: new Date(currentStudent.trialEndDate) || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
@@ -163,6 +175,22 @@ const StudentForm = () => {
               onChange={handleChange}
             />
           )}
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Batch</InputLabel>
+            <Select
+              name="batchId"
+              value={formData.batchId}
+              onChange={handleChange}
+              label="Batch"
+            >
+              {localBatches.map((batch) => (
+                <MenuItem key={batch._id} value={batch._id}>
+                  {batch.name} ({batch.slot})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
           <FormControl fullWidth margin="normal">
             <InputLabel>Assigned Courses</InputLabel>
