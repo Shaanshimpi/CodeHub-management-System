@@ -6,6 +6,7 @@ const Course = require('../models/courseModel');
 const getCourses = async (req, res, next) => {
   try {
     const courses = await Course.find({ isActive: true });
+    console.log('[courseController.getCourses] found:', courses.length)
     res.json(courses);
   } catch (error) {
     next(error);

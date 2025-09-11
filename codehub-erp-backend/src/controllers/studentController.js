@@ -17,13 +17,22 @@ const getStudents = async (req, res, next) => {
     if (req.query.batchId) {
       query.batchId = req.query.batchId;
     }
+    if (req.user?.role === 'trainer') {
+      // Trainers should only see students assigned to them
+      query.$or = [
+        { assignedTrainer: req.user._id },
+        { assignedTrainer: { $exists: false } },
+        { assignedTrainer: null }
+      ];
+    }
+    console.log('[studentsController.getStudents] query:', JSON.stringify(query));
     const students = await Student.find(query)
       .populate('userId', 'name email phone')
       .populate('assignedTrainer', 'name')
       .populate('batchId', 'name slot')
       .populate('salesPerson', 'name')
       .populate('assignedCourses', 'name');
-    
+    console.log('[studentsController.getStudents] found:', students.length);
     res.json(students);
   } catch (error) {
     next(error);
