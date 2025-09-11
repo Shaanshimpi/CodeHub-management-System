@@ -11,11 +11,15 @@ const getAttendance = async (req, res, next) => {
       const studentsInBatch = await Student.find({ batchId: req.query.batchId }).select('_id');
       filter.studentId = { $in: studentsInBatch.map(s => s._id) };
     }
+    if (req.user?.role === 'trainer') {
+      filter.trainerId = req.user._id;
+    }
+    console.log('[attendanceController.getAttendance] filter:', JSON.stringify(filter));
     const attendance = await Attendance.find(filter)
       .populate('studentId', 'studentId batchId')
       .populate('courseId', 'name')
       .populate('trainerId', 'name');
-    
+    console.log('[attendanceController.getAttendance] found:', attendance.length);
     res.json(attendance);
   } catch (error) {
     next(error);
@@ -127,6 +131,7 @@ const createBulkAttendance = async (req, res, next) => {
     }));
     
     const createdRecords = await Attendance.insertMany(attendanceRecords);
+    console.log('[attendanceController.createBulkAttendance] created count:', createdRecords.length);
     
     res.status(201).json(createdRecords);
   } catch (error) {

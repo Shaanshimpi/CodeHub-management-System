@@ -6,6 +6,7 @@ const getBatches = async (req, res, next) => {
     const batches = await Batch.find()
       .populate('courseId', 'name')
       .populate('trainerId', 'name');
+    console.log('[batchController.getBatches] found:', batches.length)
     res.json(batches);
   } catch (error) {
     next(error);

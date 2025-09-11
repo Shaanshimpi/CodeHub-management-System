@@ -19,6 +19,7 @@ import { createAttendance, updateAttendance, getAttendanceRecord } from '../../s
 import batchService from '../../api/batches';
 import attendanceApi from '../../api/attendance';
 import { getStudent, getStudents } from '../../store/slices/studentSlice';
+import { getCourses } from '../../store/slices/courseSlice';
 
 const AttendanceForm = ({ bulk }) => {
   const { id } = useParams();
@@ -33,15 +34,20 @@ const AttendanceForm = ({ bulk }) => {
   const { courses } = useSelector(state => state.courses);
 
   useEffect(() => {
+    console.debug('[AttendanceForm] init: fetching students, courses, and batches');
     dispatch(getStudents())
+    dispatch(getCourses())
     ;(async () => {
       try {
         const all = await batchService.getBatches();
+        console.debug('[AttendanceForm] fetched batches:', all?.length);
         setBatches(all);
-      } catch (e) {}
+      } catch (e) {
+        console.error('[AttendanceForm] failed to fetch batches', e);
+      }
     })()
   }, [dispatch]);
-  console.log("ssssss",students);
+  console.debug('[AttendanceForm] students in store:', students?.length);
   const [formData, setFormData] = useState({
     studentId: '',
     courseId: '',
@@ -88,9 +94,12 @@ const AttendanceForm = ({ bulk }) => {
 
   const handleStudentChange = (e) => {
     const selectedStudent = students.find(student => student._id === e.target.value);
-    console.log("selectedStudent", selectedStudent);  
-    setStudentCourses(selectedStudent?.assignedCourses || []);
-    console.log("studentCourses", studentCourses);
+    console.debug('[AttendanceForm] selectedStudent:', selectedStudent?._id);
+    const nextCourses = selectedStudent?.assignedCourses && selectedStudent.assignedCourses.length > 0
+      ? selectedStudent.assignedCourses
+      : (courses || []);
+    setStudentCourses(nextCourses);
+    console.debug('[AttendanceForm] set studentCourses length:', nextCourses?.length);
     setFormData({
       ...formData,
       [e.target.name]: e.target.value
@@ -98,7 +107,10 @@ const AttendanceForm = ({ bulk }) => {
   }
 
   const filteredStudents = students.filter((s) => {
-    const trainerMatch = !user?._id || !s.assignedTrainer || s.assignedTrainer === user._id || s.assignedTrainer?._id === user._id
+    const isTrainer = user?.role === 'trainer';
+    const trainerMatch = isTrainer
+      ? (!s.assignedTrainer || s.assignedTrainer === user._id || s.assignedTrainer?._id === user._id)
+      : true;
     const batchMatch = !batchId || (s.batchId && (s.batchId === batchId || s.batchId?._id === batchId))
     return trainerMatch && batchMatch
   })
@@ -174,6 +186,11 @@ const AttendanceForm = ({ bulk }) => {
                   label="Student"
                   required
                 >
+                  {filteredStudents.length === 0 && (
+                    <MenuItem value="" disabled>
+                      No students available for selected filter
+                    </MenuItem>
+                  )}
                   {filteredStudents.map(student => (
                     <MenuItem key={student._id} value={student._id}>
                       {student.userId.name}
@@ -190,7 +207,12 @@ const AttendanceForm = ({ bulk }) => {
                   onChange={handleChange}
                   label="Course"
                   required
-                >{console.log("studentCourses",studentCourses)}
+                >{console.debug('[AttendanceForm] rendering course options:', studentCourses?.length)}
+                  {studentCourses.length === 0 && (
+                    <MenuItem value="" disabled>
+                      No courses available for selected student
+                    </MenuItem>
+                  )}
                   {studentCourses.map(course => (
                     <MenuItem key={course._id} value={course._id}>
                       {course.name}
