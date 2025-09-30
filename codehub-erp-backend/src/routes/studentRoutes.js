@@ -6,7 +6,7 @@ const studentController = require('../controllers/studentController');
 // @route   GET /api/students
 // @desc    Get all students
 // @access  Private/Admin
-router.get('/', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student', 'sales_person', 'trainer']), studentController.getStudents);
+router.get('/', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student', 'sales_person']), studentController.getStudents);
 
 // @route   GET /api/students/:id
 // @desc    Get single student

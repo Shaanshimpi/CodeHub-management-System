@@ -21,7 +21,7 @@ router.put('/:id', protect, roleBasedAccess(['super_admin', 'admin', 'trainer'])
 // @route   POST /api/attendance/bulk
 // @desc    Bulk create attendance records
 // @access  Private/Trainer
-router.post('/bulk', protect, roleBasedAccess(['super_admin', 'admin','trainer']), attendanceController.createBulkAttendance);
+router.post('/bulk', protect, roleBasedAccess(['super_admin', 'admin', 'trainer']), attendanceController.createBulkAttendance);
 
 // @route   GET /api/attendance/student/:studentId
 // @desc    Get attendance for a student
