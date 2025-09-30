@@ -57,40 +57,77 @@ const loginUser = async (req, res, next) => {
 
     // Validate request
     if (!email || !password) {
-      res.status(400);
-      throw new Error('Please provide email and password');
+      return res.status(400).json({
+        success: false,
+        statusCode: 400,
+        message: 'Please provide email and password'
+      });
+    }
+
+    // Check if MongoDB is connected
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        statusCode: 503,
+        message: 'Database connection unavailable. Please try again later.'
+      });
     }
 
     // Get user with password field
     const user = await User.findOne({ email }).select('+password');
-    console.log(user);
+    console.log('User found:', user ? 'Yes' : 'No');
 
     if (!user) {
-      res.status(401);
-      throw new Error('Invalid credentials');
+      return res.status(401).json({
+        success: false,
+        statusCode: 401,
+        message: 'Invalid credentials'
+      });
     }
 
     // Check password
     const isMatch = await user.matchPassword(password);
     
     if (!isMatch) {
-      res.status(401);
-      throw new Error('Invalid credentials');
+      return res.status(401).json({
+        success: false,
+        statusCode: 401,
+        message: 'Invalid credentials'
+      });
     }
 
     const token = generateToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
     res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      token,
-      refreshToken
+      success: true,
+      statusCode: 200,
+      message: 'Login successful',
+      data: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        token,
+        refreshToken
+      }
     });
   } catch (error) {
+    console.error('Login error:', error);
+    
+    // Handle specific MongoDB errors
+    if (error.name === 'MongooseServerSelectionError' || 
+        error.message.includes('buffering timed out') ||
+        error.message.includes('connection')) {
+      return res.status(503).json({
+        success: false,
+        statusCode: 503,
+        message: 'Database connection unavailable. Please try again later.'
+      });
+    }
+    
     next(error);
   }
 };
