@@ -2,7 +2,7 @@
 cmds = [
   'npm install',
   'cd codehub-erp-backend && npm ci --only=production',
-  'cd ../frontend && npm ci',
+  'cd ../frontend && npm ci --legacy-peer-deps',
   'cd ../frontend && npm run build'
 ]
 
