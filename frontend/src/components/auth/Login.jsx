@@ -42,7 +42,7 @@ const Login = () => {
         </Typography>
         {error && (
           <Alert severity="error" sx={{ width: '100%', mt: 2 }}>
-            {error}
+            {typeof error === 'string' ? error : error.message || 'Login failed'}
           </Alert>
         )}
         <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>

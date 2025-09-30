@@ -13,10 +13,17 @@ export const login = createAsyncThunk(
     try {
       const response = await axios.post(`/api/auth/login`, { email, password })
       console.log('Login response:', response.data)
-      setAuthToken(response.data.token)
-      return response.data
+      
+      // Handle new response format
+      if (response.data.success && response.data.data) {
+        setAuthToken(response.data.data.token)
+        return response.data.data
+      } else {
+        return rejectWithValue(response.data)
+      }
     } catch (error) {
-      return rejectWithValue(error.response.data)
+      console.log('Login error response:', error.response?.data)
+      return rejectWithValue(error.response?.data || { message: 'Login failed' })
     }
   }
 )
