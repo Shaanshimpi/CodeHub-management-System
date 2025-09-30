@@ -28,4 +28,5 @@ ENV NODE_ENV=production
 ENV PORT=5000
 
 # Start the application
-CMD ["npm", "run", "start:prod"]
+WORKDIR /app/codehub-erp-backend
+CMD ["npm", "start"]

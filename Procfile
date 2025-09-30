@@ -1,1 +1,1 @@
-web: npm run start:prod
+web: cd codehub-erp-backend && npm start
