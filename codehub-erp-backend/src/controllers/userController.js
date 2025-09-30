@@ -18,8 +18,7 @@ const getUsers = async (req, res, next) => {
 // @access  Private/Admin
 const getUser = async (req, res, next) => {
   try {
-    console.log("pppppppppppppppppppp",req.user);
-    const user = await User.findById(req.user._id).select('-password');
+    const user = await User.findById(req.params.id).select('-password');
     
     if (!user) {
       res.status(404);
@@ -38,6 +37,12 @@ const getUser = async (req, res, next) => {
 const createUser = async (req, res, next) => {
   try {
     const { name, email, phone, password, role } = req.body;
+
+    // Prevent salespersons from creating trainers
+    if (req.user.role === 'sales' && role === 'trainer') {
+      res.status(403);
+      throw new Error('Salespersons are not authorized to create trainers');
+    }
 
     const userExists = await User.findOne({ email });
     if (userExists) {

@@ -35,14 +35,30 @@ const seedDatabase = async () => {
       role: 'admin'
     });
 
-    // Create sample trainer
-    const trainer = await User.create({
-      name: 'Trainer User',
-      email: 'trainer@codehub.in',
-      phone: '7777777777',
-      password: 'trainer123',
-      role: 'trainer'
-    });
+    // Create sample trainers
+    const trainers = await User.create([
+        {
+            name: 'Trainer User 1',
+            email: 'trainer1@codehub.in',
+            phone: '7777777771',
+            password: 'trainer123',
+            role: 'trainer'
+        },
+        {
+            name: 'Trainer User 2',
+            email: 'trainer2@codehub.in',
+            phone: '7777777772',
+            password: 'trainer123',
+            role: 'trainer'
+        },
+        {
+            name: 'Trainer User 3',
+            email: 'trainer3@codehub.in',
+            phone: '7777777773',
+            password: 'trainer123',
+            role: 'trainer'
+        }
+    ]);
 
     // Create sample sales person
     const salesPerson = await User.create({
@@ -83,26 +99,40 @@ const seedDatabase = async () => {
 
     // Create batches
     const batches = await Batch.create([
-      { name: 'FS-05PM', slot: '17:00-18:00', courseId: courses[0]._id, trainerId: trainer._id },
-      { name: 'FS-07PM', slot: '19:00-20:00', courseId: courses[0]._id, trainerId: trainer._id },
-      { name: 'FS-06PM', slot: '18:00-19:00', courseId: courses[0]._id, trainerId: trainer._id },
-      { name: 'FS-07AM', slot: '07:00-08:00', courseId: courses[0]._id, trainerId: trainer._id },
-      { name: 'FS-08AM', slot: '08:00-09:00', courseId: courses[0]._id, trainerId: trainer._id },
-      { name: 'FS-09AM', slot: '09:00-10:00', courseId: courses[0]._id, trainerId: trainer._id }
+      { name: 'FS-05PM', slot: '17:00-18:00', courseId: courses[0]._id, trainerId: trainers[0]._id },
+      { name: 'FS-07PM', slot: '19:00-20:00', courseId: courses[0]._id, trainerId: trainers[1]._id },
+      { name: 'FS-06PM', slot: '18:00-19:00', courseId: courses[0]._id, trainerId: trainers[2]._id },
+      { name: 'FS-07AM', slot: '07:00-08:00', courseId: courses[0]._id, trainerId: trainers[0]._id },
+      { name: 'FS-08AM', slot: '08:00-09:00', courseId: courses[0]._id, trainerId: trainers[1]._id },
+      { name: 'FS-09AM', slot: '09:00-10:00', courseId: courses[0]._id, trainerId: trainers[2]._id }
     ]);
 
-    // Create sample students in batches
-    const studentUsers = await User.create([
-      { name: 'Alice', email: 'alice@codehub.in', phone: '9000000001', password: 'student123', role: 'student', salesPerson: salesPerson._id },
-      { name: 'Bob', email: 'bob@codehub.in', phone: '9000000002', password: 'student123', role: 'student', salesPerson: salesPerson._id },
-      { name: 'Charlie', email: 'charlie@codehub.in', phone: '9000000003', password: 'student123', role: 'student', salesPerson: salesPerson._id }
-    ]);
+    // Create sample students
+    const studentUsers = [];
+    for (let i = 1; i <= 30; i++) {
+        studentUsers.push({
+            name: `Student ${i}`,
+            email: `student${i}@codehub.in`,
+            phone: `90000000${i.toString().padStart(2, '0')}`,
+            password: 'student123',
+            role: 'student',
+            salesPerson: salesPerson._id
+        });
+    }
+    const createdStudentUsers = await User.create(studentUsers);
 
-    await Student.create([
-      { userId: studentUsers[0]._id, salesPerson: salesPerson._id, assignedCourses: [courses[0]._id], assignedTrainer: trainer._id, batchId: batches[0]._id, status: 'active' },
-      { userId: studentUsers[1]._id, salesPerson: salesPerson._id, assignedCourses: [courses[0]._id], assignedTrainer: trainer._id, batchId: batches[1]._id, status: 'active' },
-      { userId: studentUsers[2]._id, salesPerson: salesPerson._id, assignedCourses: [courses[0]._id], assignedTrainer: trainer._id, batchId: batches[2]._id, status: 'active' }
-    ]);
+    const students = [];
+    for (let i = 0; i < 30; i++) {
+        students.push({
+            userId: createdStudentUsers[i]._id,
+            salesPerson: salesPerson._id,
+            assignedCourses: [courses[0]._id],
+            assignedTrainer: trainers[i % 3]._id, // Distribute students among 3 trainers
+            batchId: batches[i % 6]._id, // Distribute students among 6 batches
+            status: 'active'
+        });
+    }
+    await Student.create(students);
 
     console.log('Database seeded successfully!');
     process.exit(0);

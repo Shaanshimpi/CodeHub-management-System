@@ -6,7 +6,7 @@ const attendanceController = require('../controllers/attendanceController');
 // @route   GET /api/attendance
 // @desc    Get all attendance records
 // @access  Private/Admin
-router.get('/', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), attendanceController.getAttendance);
+router.get('/', protect, roleBasedAccess(['super_admin', 'admin', 'trainer']), attendanceController.getAttendance);
 
 // @route   POST /api/attendance
 // @desc    Create attendance record

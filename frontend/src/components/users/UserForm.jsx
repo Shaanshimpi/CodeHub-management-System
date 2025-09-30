@@ -9,6 +9,7 @@ const UserForm = () => {
   const dispatch = useDispatch()
   const navigate = useNavigate()
   const { currentUser, loading, error } = useSelector(state => state.users)
+  const { user: loggedInUser } = useSelector(state => state.auth) // Get logged-in user info
   
   const [formData, setFormData] = useState({
     name: '',
@@ -51,6 +52,12 @@ const UserForm = () => {
     
     if (!id && formData.password !== passwordConfirm) {
       alert('Passwords do not match')
+      return
+    }
+
+    // Frontend validation: Prevent salesperson from creating trainer
+    if (loggedInUser.role === 'sales_person' && formData.role === 'trainer') {
+      alert('Salespersons are not authorized to create trainers')
       return
     }
     
@@ -118,7 +125,9 @@ const UserForm = () => {
               <MenuItem value="super_admin">Super Admin</MenuItem>
               <MenuItem value="admin">Admin</MenuItem>
               <MenuItem value="sales_person">Sales Person</MenuItem>
-              <MenuItem value="trainer">Trainer</MenuItem>
+              {loggedInUser.role !== 'sales_person' && (
+                <MenuItem value="trainer">Trainer</MenuItem>
+              )}
               <MenuItem value="student">Student</MenuItem>
             </Select>
           </FormControl>

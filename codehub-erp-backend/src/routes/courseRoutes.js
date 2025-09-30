@@ -11,7 +11,7 @@ router.get('/', courseController.getCourses);
 // @route   GET /api/courses/all
 // @desc    Get all courses (including inactive)
 // @access  Private/Admin
-router.get('/all', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), courseController.getAllCourses);
+router.get('/all', protect, roleBasedAccess(['super_admin', 'admin']), courseController.getAllCourses);
 
 // @route   GET /api/courses/:id
 // @desc    Get single course
@@ -21,16 +21,16 @@ router.get('/:id', courseController.getCourse);
 // @route   POST /api/courses
 // @desc    Create course
 // @access  Private/Admin
-router.post('/', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), courseController.createCourse);
+router.post('/', protect, roleBasedAccess(['super_admin', 'admin']), courseController.createCourse);
 
 // @route   PUT /api/courses/:id
 // @desc    Update course
 // @access  Private/Admin
-router.put('/:id', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), courseController.updateCourse);
+router.put('/:id', protect, roleBasedAccess(['super_admin', 'admin']), courseController.updateCourse);
 
 // @route   DELETE /api/courses/:id
 // @desc    Delete course
 // @access  Private/Admin
-router.delete('/:id', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), courseController.deleteCourse);
+router.delete('/:id', protect, roleBasedAccess(['super_admin', 'admin']), courseController.deleteCourse);
 
 module.exports = router;

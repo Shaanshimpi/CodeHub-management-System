@@ -1,6 +1,9 @@
 import axios from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL
+const API_URL = import.meta.env.VITE_API_URL || ''
+
+// Configure axios defaults
+axios.defaults.baseURL = API_URL
 
 const getStudents = async () => {
   console.debug('[api/students] GET /api/students request')

@@ -3,7 +3,7 @@ const Student = require('../models/studentModel');
 
 // @desc    Get all attendance records
 // @route   GET /api/attendance
-// @access  Private/Admin
+// @access  Private/Admin or Private/Trainer
 const getAttendance = async (req, res, next) => {
   try {
     const filter = {};
@@ -11,6 +11,8 @@ const getAttendance = async (req, res, next) => {
       const studentsInBatch = await Student.find({ batchId: req.query.batchId }).select('_id');
       filter.studentId = { $in: studentsInBatch.map(s => s._id) };
     }
+    // If user is a trainer, only show attendance they've marked.
+    // Admin/Superadmin can see all.
     if (req.user?.role === 'trainer') {
       filter.trainerId = req.user._id;
     }
@@ -28,21 +30,15 @@ const getAttendance = async (req, res, next) => {
 
 // @desc    Create attendance record
 // @route   POST /api/attendance
-// @access  Private/Trainer
+// @access  Private/Admin or Private/Trainer
 const createAttendance = async (req, res, next) => {
   try {
     const { studentId, courseId, status, notes } = req.body;
     
-    // Check if student is assigned to trainer
     const student = await Student.findById(studentId);
     if (!student) {
       res.status(404);
       throw new Error('Student not found');
-    }
-    
-    if (student.assignedTrainer.toString() !== req.user._id.toString()) {
-      res.status(403);
-      throw new Error('Not authorized to mark attendance for this student');
     }
     
     // Check if student is assigned to the course
@@ -69,7 +65,7 @@ const createAttendance = async (req, res, next) => {
 
 // @desc    Update attendance record
 // @route   PUT /api/attendance/:id
-// @access  Private/Trainer
+// @access  Private/Admin or Private/Trainer
 const updateAttendance = async (req, res, next) => {
   try {
     const attendance = await Attendance.findById(req.params.id);
@@ -79,8 +75,12 @@ const updateAttendance = async (req, res, next) => {
       throw new Error('Attendance record not found');
     }
     
-    // Check if the requesting trainer created this record
-    if (attendance.trainerId.toString() !== req.user._id.toString()) {
+    const isSuperAdmin = req.user.role === 'super_admin';
+    const isAdmin = req.user.role === 'admin';
+    const isOwner = attendance.trainerId.toString() === req.user._id.toString();
+
+    // Allow update if user is super_admin, admin, or the trainer who created the record
+    if (!isSuperAdmin && !isAdmin && !isOwner) {
       res.status(403);
       throw new Error('Not authorized to update this attendance record');
     }
@@ -98,36 +98,32 @@ const updateAttendance = async (req, res, next) => {
 
 // @desc    Bulk create attendance records
 // @route   POST /api/attendance/bulk
-// @access  Private/Trainer
+// @access  Private/Admin or Private/Trainer
 const createBulkAttendance = async (req, res, next) => {
   try {
     const { date, records, batchId, courseId, status, notes } = req.body;
-    
-    let students = [];
-    let payloadRecords = records;
+
+    let studentsToProcess = [];
     if (batchId) {
-      students = await Student.find({ batchId });
-      payloadRecords = students.map(student => ({ studentId: student._id, courseId, status, notes }));
-    } else {
+      // Mode 1: Get all students from a batch
+      studentsToProcess = await Student.find({ batchId });
+    } else if (records) {
+      // Mode 2: Get specific students from the records array
       const studentIds = records.map(record => record.studentId);
-      students = await Student.find({ _id: { $in: studentIds } });
+      studentsToProcess = await Student.find({ _id: { $in: studentIds } });
+    } else {
+        res.status(400);
+        throw new Error('Either batchId or records must be provided');
     }
     
-    for (const student of students) {
-      if (student.assignedTrainer.toString() !== req.user._id.toString()) {
-        res.status(403);
-        throw new Error(`Not authorized to mark attendance for student ${student.studentId}`);
-      }
-    }
-    
-    const attendanceRecords = payloadRecords.map(record => ({
-      studentId: record.studentId,
-      batchId,
-      courseId: record.courseId,
+    const attendanceRecords = studentsToProcess.map(student => ({
+      studentId: student._id,
+      batchId: student.batchId, // Get batchId from the student document
+      courseId: courseId, // Use top-level courseId
       trainerId: req.user._id,
       date: new Date(date),
-      status: record.status,
-      notes: record.notes || ''
+      status: status, // Use top-level status
+      notes: notes || ''
     }));
     
     const createdRecords = await Attendance.insertMany(attendanceRecords);
@@ -151,8 +147,11 @@ const getStudentAttendance = async (req, res, next) => {
       throw new Error('Student not found');
     }
     
-    // Check if the requesting user has access to this student's attendance
-    if (req.user.role === 'student' && student.userId.toString() !== req.user._id.toString()) {
+    const allowedRoles = ['super_admin', 'admin', 'sales_person', 'trainer'];
+    const isAllowedRole = allowedRoles.includes(req.user.role);
+    const isStudentOwner = req.user.role === 'student' && student.userId.toString() === req.user._id.toString();
+
+    if (!isAllowedRole && !isStudentOwner) {
       res.status(403);
       throw new Error('Not authorized to access this student\'s attendance');
     }
@@ -173,8 +172,12 @@ const getStudentAttendance = async (req, res, next) => {
 // @access  Private/Admin
 const getTrainerAttendance = async (req, res, next) => {
   try {
-    // Only allow admin or the trainer themselves to view
-    if (req.user.role !== 'admin' && req.params.trainerId !== req.user._id.toString()) {
+    const isSuperAdmin = req.user.role === 'super_admin';
+    const isAdmin = req.user.role === 'admin';
+    const isTrainerOwner = req.params.trainerId === req.user._id.toString();
+
+    // Allow access if user is super_admin, admin, or the trainer themselves
+    if (!isSuperAdmin && !isAdmin && !isTrainerOwner) {
       res.status(403);
       throw new Error('Not authorized to access this trainer\'s attendance records');
     }
@@ -189,6 +192,7 @@ const getTrainerAttendance = async (req, res, next) => {
     next(error);
   }
 };
+
 
 module.exports = {
   getAttendance,

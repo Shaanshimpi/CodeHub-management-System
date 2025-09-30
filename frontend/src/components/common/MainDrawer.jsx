@@ -268,7 +268,7 @@ const MainDrawer = ({ mobileOpen, user, handleDrawerToggle }) => {
           </>
         )}
 
-        {user && user?.role === 'super_admin' && (
+        {user && ['super_admin', 'admin'].includes(user?.role) && (
           <ListItem disablePadding>
             <ListItemButton
               component={Link}

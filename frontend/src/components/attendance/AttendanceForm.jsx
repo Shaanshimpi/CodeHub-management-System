@@ -12,13 +12,14 @@ import {
   Select, 
   FormControl, 
   InputLabel,
-  CircularProgress
+  CircularProgress,
+  Checkbox,
+  ListItemText
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers';
-import { createAttendance, updateAttendance, getAttendanceRecord } from '../../store/slices/attendanceSlice';
+import { createAttendance, updateAttendance, getAttendanceRecord, createBulkAttendance } from '../../store/slices/attendanceSlice';
 import batchService from '../../api/batches';
-import attendanceApi from '../../api/attendance';
-import { getStudent, getStudents } from '../../store/slices/studentSlice';
+import { getStudents } from '../../store/slices/studentSlice';
 import { getCourses } from '../../store/slices/courseSlice';
 
 const AttendanceForm = ({ bulk }) => {
@@ -34,22 +35,20 @@ const AttendanceForm = ({ bulk }) => {
   const { courses } = useSelector(state => state.courses);
 
   useEffect(() => {
-    console.debug('[AttendanceForm] init: fetching students, courses, and batches');
     dispatch(getStudents())
     dispatch(getCourses())
     ;(async () => {
       try {
         const all = await batchService.getBatches();
-        console.debug('[AttendanceForm] fetched batches:', all?.length);
         setBatches(all);
       } catch (e) {
         console.error('[AttendanceForm] failed to fetch batches', e);
       }
     })()
   }, [dispatch]);
-  console.debug('[AttendanceForm] students in store:', students?.length);
+
   const [formData, setFormData] = useState({
-    studentId: '',
+    studentId: [],
     courseId: '',
     date: new Date(),
     status: 'present',
@@ -60,22 +59,22 @@ const AttendanceForm = ({ bulk }) => {
   const [formSuccess, setFormSuccess] = useState('');
 
   useEffect(() => {
-    if (id) {
+    if (id && !bulk) {
       dispatch(getAttendanceRecord(id));
     }
-  }, [id, dispatch]);
+  }, [id, dispatch, bulk]);
 
   useEffect(() => {
-    if (currentRecord && id) {
+    if (currentRecord && id && !bulk) {
       setFormData({
-        studentId: currentRecord.studentId?._id || '',
+        studentId: [currentRecord.studentId?._id || ''],
         courseId: currentRecord.courseId?._id || '',
         date: new Date(currentRecord.date),
         status: currentRecord.status || 'present',
         notes: currentRecord.notes || ''
       });
     }
-  }, [currentRecord, id]);
+  }, [currentRecord, id, bulk]);
 
   useEffect(() => {
     if (error) {
@@ -93,16 +92,27 @@ const AttendanceForm = ({ bulk }) => {
   };
 
   const handleStudentChange = (e) => {
-    const selectedStudent = students.find(student => student._id === e.target.value);
-    console.debug('[AttendanceForm] selectedStudent:', selectedStudent?._id);
-    const nextCourses = selectedStudent?.assignedCourses && selectedStudent.assignedCourses.length > 0
-      ? selectedStudent.assignedCourses
-      : (courses || []);
-    setStudentCourses(nextCourses);
-    console.debug('[AttendanceForm] set studentCourses length:', nextCourses?.length);
+    const { target: { value } } = e;
+    const selectedStudentIds = typeof value === 'string' ? value.split(',') : value;
+
+    let commonCourses = [];
+    if (selectedStudentIds.length > 0) {
+        const firstStudent = students.find(s => s._id === selectedStudentIds[0]);
+        if (firstStudent) {
+            commonCourses = firstStudent.assignedCourses;
+            for (let i = 1; i < selectedStudentIds.length; i++) {
+                const nextStudent = students.find(s => s._id === selectedStudentIds[i]);
+                if (nextStudent) {
+                    commonCourses = commonCourses.filter(course => nextStudent.assignedCourses.some(nc => nc._id === course._id));
+                }
+            }
+        }
+    }
+    setStudentCourses(commonCourses);
+
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      studentId: selectedStudentIds
     });
   }
 
@@ -121,15 +131,31 @@ const AttendanceForm = ({ bulk }) => {
     setFormSuccess('');
 
     try {
-      const attendanceData = {
-        ...formData,
-        trainerId: user._id
-      };
-
-      if (id) {
+      if (bulk) {
+        const bulkData = {
+          batchId: batchId,
+          courseId: formData.courseId,
+          date: formData.date,
+          status: formData.status,
+          notes: formData.notes
+        };
+        await dispatch(createBulkAttendance(bulkData));
+      } else if (id) {
+        const attendanceData = {
+          ...formData,
+          studentId: formData.studentId[0],
+          trainerId: user._id
+        };
         await dispatch(updateAttendance({ id, ...attendanceData }));
       } else {
-        await dispatch(createAttendance(attendanceData));
+        const records = formData.studentId.map(studentId => ({ studentId }));
+        await dispatch(createBulkAttendance({
+            records,
+            courseId: formData.courseId,
+            date: formData.date,
+            status: formData.status,
+            notes: formData.notes
+        }));
       }
 
       if (!error) {
@@ -161,7 +187,40 @@ const AttendanceForm = ({ bulk }) => {
         )}
 
         <Box component="form" onSubmit={handleSubmit}>
-          {!bulk && (
+          {bulk ? (
+            <>
+              <FormControl fullWidth margin="normal">
+                <InputLabel>Batch</InputLabel>
+                <Select
+                  name="batchId"
+                  value={batchId}
+                  onChange={(e) => setBatchId(e.target.value)}
+                  label="Batch"
+                  required
+                >
+                  {batches.map((b) => (
+                    <MenuItem key={b._id} value={b._id}>{b.name} ({b.slot})</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth margin="normal">
+                <InputLabel>Course</InputLabel>
+                <Select
+                  name="courseId"
+                  value={formData.courseId}
+                  onChange={handleChange}
+                  label="Course"
+                  required
+                >
+                  {courses.map(course => (
+                    <MenuItem key={course._id} value={course._id}>
+                      {course.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </>
+          ) : (
             <>
               <FormControl fullWidth margin="normal">
                 <InputLabel>Batch</InputLabel>
@@ -181,10 +240,12 @@ const AttendanceForm = ({ bulk }) => {
                 <InputLabel>Student</InputLabel>
                 <Select
                   name="studentId"
+                  multiple
                   value={formData.studentId}
                   onChange={handleStudentChange}
                   label="Student"
                   required
+                  renderValue={(selected) => selected.map(id => students.find(s => s._id === id)?.userId.name).join(', ' )}
                 >
                   {filteredStudents.length === 0 && (
                     <MenuItem value="" disabled>
@@ -193,7 +254,8 @@ const AttendanceForm = ({ bulk }) => {
                   )}
                   {filteredStudents.map(student => (
                     <MenuItem key={student._id} value={student._id}>
-                      {student.userId.name}
+                      <Checkbox checked={formData.studentId.indexOf(student._id) > -1} />
+                      <ListItemText primary={student.userId.name} />
                     </MenuItem>
                   ))}
                 </Select>
@@ -207,12 +269,7 @@ const AttendanceForm = ({ bulk }) => {
                   onChange={handleChange}
                   label="Course"
                   required
-                >{console.debug('[AttendanceForm] rendering course options:', studentCourses?.length)}
-                  {studentCourses.length === 0 && (
-                    <MenuItem value="" disabled>
-                      No courses available for selected student
-                    </MenuItem>
-                  )}
+                >
                   {studentCourses.map(course => (
                     <MenuItem key={course._id} value={course._id}>
                       {course.name}

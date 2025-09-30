@@ -7,7 +7,16 @@ const Course = require('../models/courseModel');
 // @access  Private/Admin
 const getFees = async (req, res, next) => {
   try {
-    const fees = await Fee.find()
+    const query = {};
+    if (req.user?.role === 'sales_person') {
+      const students = await Student.find({ salesPerson: req.user._id }).select('_id');
+      const studentIds = students.map(s => s._id);
+      query.studentId = { $in: studentIds };
+    } else if (req.query.studentId) {
+        query.studentId = req.query.studentId;
+    }
+
+    const fees = await Fee.find(query)
       .populate('studentId', 'studentId')
       .populate('courseId', 'name')
       .populate('createdBy', 'name')

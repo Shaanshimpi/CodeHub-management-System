@@ -66,13 +66,13 @@ const AttendanceList = () => {
   ]
   
 
-  const rows = attendance.map(record => ({
+  const rows = (attendance || []).map(record => ({
     _id: record._id,
     date: record.date,
-    studentName: record.studentId.studentId,
-    courseName: record.courseId.name,
+    studentName: record.studentId?.studentId || 'N/A',
+    courseName: record.courseId?.name || 'N/A',
     status: record.status,
-    trainerName: record.trainerId.name,
+    trainerName: record.trainerId?.name || 'N/A',
     notes: record.notes
   }))
 

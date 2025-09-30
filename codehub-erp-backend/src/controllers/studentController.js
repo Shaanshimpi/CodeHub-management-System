@@ -19,12 +19,12 @@ const getStudents = async (req, res, next) => {
     }
     if (req.user?.role === 'trainer') {
       // Trainers should only see students assigned to them
-      query.$or = [
-        { assignedTrainer: req.user._id },
-        { assignedTrainer: { $exists: false } },
-        { assignedTrainer: null }
-      ];
+      query.assignedTrainer = req.user._id;
+    } else if (req.user?.role === 'sales_person') {
+      // Salespersons should only see students they are assigned to
+      query.salesPerson = req.user._id;
     }
+
     console.log('[studentsController.getStudents] query:', JSON.stringify(query));
     const students = await Student.find(query)
       .populate('userId', 'name email phone')

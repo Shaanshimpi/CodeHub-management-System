@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { Link } from 'react-router-dom'
 import { DataGrid } from '@mui/x-data-grid'
-import { Button, Box, Typography } from '@mui/material'
+import { Button, Box, Typography, ButtonGroup } from '@mui/material'
 import { getStudents } from '../../store/slices/studentSlice'
 
 const StudentList = () => {
@@ -27,17 +27,30 @@ const StudentList = () => {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 150,
-      renderCell: (params) => (
-        <Button
-          component={Link}
-          to={`/students/${params.row._id}`}
-          size="small"
-          variant="outlined"
-        >
-          View
-        </Button>
-      ),
+      width: 250,
+      renderCell: (params) => {
+        const allowedRoles = ['super_admin', 'admin', 'sales_person', 'trainer'];
+        const canViewAttendance = allowedRoles.includes(user?.role);
+
+        return (
+          <ButtonGroup variant="outlined" size="small">
+            <Button
+              component={Link}
+              to={`/students/${params.row._id}`}
+            >
+              View
+            </Button>
+            {canViewAttendance && (
+              <Button
+                component={Link}
+                to={`/attendance/student/${params.row._id}`}
+              >
+                Attendance
+              </Button>
+            )}
+          </ButtonGroup>
+        )
+      },
     },
   ]
 
@@ -74,4 +87,4 @@ const StudentList = () => {
   )
 }
 
-export default StudentList
+export default StudentList;

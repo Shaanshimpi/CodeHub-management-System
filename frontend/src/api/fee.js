@@ -1,44 +1,31 @@
-import axios from 'axios'
+import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL
+const API_URL = import.meta.env.VITE_API_URL || '';
+
+// Configure axios defaults
+axios.defaults.baseURL = API_URL;
 
 const getFees = async () => {
-  const response = await axios.get(`/api/fees`)
-  return response.data
-}
-
-const getFee = async (id) => {
-  const response = await axios.get(`/api/fees/${id}`)
-  return response.data
-}
-
-const createFee = async (feeData) => {
-  const response = await axios.post(`/api/fees`, feeData)
-  return response.data
-}
-
-const updateFee = async ({ id, ...feeData }) => {
-  const response = await axios.put(`/api/fees/${id}`, feeData)
-  return response.data
-}
-
-const recordPayment = async (paymentData) => {
-  const response = await axios.post(`/api/fees/payment`, paymentData)
-  return response.data
-}
+  console.debug('[api/fees] GET /api/fees request');
+  const response = await axios.get(`/api/fees`);
+  console.debug('[api/fees] GET /api/fees response', Array.isArray(response.data) ? response.data.length : response.data);
+  return response.data;
+};
 
 const getStudentFees = async (studentId) => {
-  const response = await axios.get(`/api/students/${studentId}/fees`)
-  return response.data
-}
+  console.debug('[api/fees] GET /api/students/:studentId/fees request', studentId);
+  const response = await axios.get(`/api/students/${studentId}/fees`);
+  console.debug('[api/fees] GET /api/students/:studentId/fees response', Array.isArray(response.data) ? response.data.length : response.data);
+  return response.data;
+};
 
-const feeService = {
-  getFees,
-  getFee,
-  createFee,
-  updateFee,
-  recordPayment,
-  getStudentFees
-}
+const createFee = async (feeData) => {
+  console.debug('[api/fees] POST /api/fees request', feeData);
+  const response = await axios.post(`/api/fees`, feeData);
+  console.debug('[api/fees] POST /api/fees response', response.data?._id);
+  return response.data;
+};
+
+const feeService = { getFees, getStudentFees, createFee };
 
 export default feeService;

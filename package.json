@@ -1,0 +1,27 @@
+{
+  "name": "codehub-erp",
+  "version": "1.0.0",
+  "description": "CodeHub ERP System - Full Stack Application",
+  "main": "codehub-erp-backend/server.js",
+  "scripts": {
+    "start": "npm run start:backend",
+    "start:prod": "npm run build:frontend && npm run start:backend",
+    "start:backend": "cd codehub-erp-backend && npm start",
+    "start:frontend": "cd frontend && npm run dev",
+    "build:frontend": "cd frontend && npm run build",
+    "install:all": "npm install && cd codehub-erp-backend && npm install && cd ../frontend && npm install",
+    "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "seed": "cd codehub-erp-backend && npm run seed"
+  },
+  "keywords": ["erp", "education", "management", "system"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chart.js": "^4.5.0",
+    "react-chartjs-2": "^5.3.0",
+    "concurrently": "^8.2.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

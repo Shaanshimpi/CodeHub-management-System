@@ -2,7 +2,10 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import axios from 'axios'
 import { setAuthToken, removeAuthToken } from '../../utils/auth'
 
-const API_URL = import.meta.env.VITE_API_URL
+const API_URL = import.meta.env.VITE_API_URL || ''
+
+// Configure axios defaults
+axios.defaults.baseURL = API_URL
 
 export const login = createAsyncThunk(
   'auth/login',

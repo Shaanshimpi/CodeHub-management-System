@@ -56,6 +56,17 @@ export const getStudentAttendance = createAsyncThunk(
   }
 )
 
+export const createBulkAttendance = createAsyncThunk(
+  'attendance/createBulk',
+  async (data, { rejectWithValue }) => {
+    try {
+      return await attendanceService.createBulkAttendance(data)
+    } catch (error) {
+      return rejectWithValue(error.response.data)
+    }
+  }
+)
+
 const attendanceSlice = createSlice({
   name: 'attendance',
   initialState: {
@@ -131,6 +142,18 @@ const attendanceSlice = createSlice({
         state.attendance = action.payload
       })
       .addCase(getStudentAttendance.rejected, (state, action) => {
+        state.loading = false
+        state.error = action.payload
+      })
+      .addCase(createBulkAttendance.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(createBulkAttendance.fulfilled, (state, action) => {
+        state.loading = false
+        state.attendance.push(...action.payload)
+      })
+      .addCase(createBulkAttendance.rejected, (state, action) => {
         state.loading = false
         state.error = action.payload
       })

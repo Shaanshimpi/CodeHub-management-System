@@ -6,32 +6,32 @@ const userController = require('../controllers/userController');
 // @route   GET /api/users
 // @desc    Get all users
 // @access  Private/SuperAdmin
-router.get('/', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), userController.getUsers);
+router.get('/', protect, roleBasedAccess(['super_admin', 'admin']), userController.getUsers);
 
 // @route   GET /api/users/:id
 // @desc    Get single user
 // @access  Private/Admin
-router.get('/:id', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), userController.getUser);
+router.get('/:id', protect, roleBasedAccess(['super_admin', 'admin']), userController.getUser);
 
 // @route   POST /api/users
 // @desc    Create user
 // @access  Private/Admin
-router.post('/', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), userController.createUser);
+router.post('/', protect, roleBasedAccess(['super_admin', 'admin']), userController.createUser);
 
 // @route   PUT /api/users/:id
 // @desc    Update user
 // @access  Private/Admin
-router.put('/:id', protect, roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), userController.updateUser);
+router.put('/:id', protect, roleBasedAccess(['super_admin', 'admin']), userController.updateUser);
 
 // @route   DELETE /api/users/:id
 // @desc    Delete user
 // @access  Private/SuperAdmin
-router.delete('/:id', protect, roleBasedAccess(['super_admin']), userController.deleteUser);
+router.delete('/:id', protect, roleBasedAccess(['super_admin', 'admin']), userController.deleteUser);
 
 // @route   GET /api/users/profile
 // @desc    Get user profile
 // @access  Private
-router.get('/profile', protect,roleBasedAccess(['super_admin', 'admin', 'trainer', 'student', 'trainer', 'student']), userController.getUserProfile);
+router.get('/profile', protect,roleBasedAccess(['super_admin', 'admin', 'trainer', 'student']), userController.getUserProfile);
 
 // @route   PUT /api/users/profile
 // @desc    Update user profile

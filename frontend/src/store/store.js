@@ -6,6 +6,7 @@ import courseReducer from './slices/courseSlice'
 import attendanceReducer from './slices/attendanceSlice'
 import feeReducer from './slices/feeSlice'
 import userReducer from './slices/userSlice'
+import batchReducer from './slices/batchSlice'
 
 export const store = configureStore({
   reducer: {
@@ -15,7 +16,8 @@ export const store = configureStore({
     courses: courseReducer,
     attendance: attendanceReducer,
     fees: feeReducer,
-    users: userReducer
+    users: userReducer,
+    batches: batchReducer
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(apiSlice.middleware),

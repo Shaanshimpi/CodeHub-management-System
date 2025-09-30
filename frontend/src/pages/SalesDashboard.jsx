@@ -1,67 +1,66 @@
-import { useEffect } from 'react'
-import { useDispatch, useSelector } from 'react-redux'
-import { Box, Typography, Paper, Grid } from '@mui/material'
-import { getStudents} from '../store/slices/studentSlice'
-import { getCourses } from '../store/slices/courseSlice'
-import { getFees } from '../store/slices/feeSlice'
-import StudentList from '../components/students/StudentList'
-import FeeList from '../components/fees/FeeList'
+import { useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { Box, Typography, Grid, Card, CardContent } from '@mui/material';
+import { getStudents } from '../store/slices/studentSlice';
+import { getFees } from '../store/slices/feeSlice';
+import StudentList from '../components/students/StudentList';
 
 const SalesDashboard = () => {
-  const dispatch = useDispatch()
-  const { students } = useSelector(state => state.students)
-  const { fees } = useSelector(state => state.fees)
+  const dispatch = useDispatch();
+  const { user } = useSelector(state => state.auth);
+  const { students } = useSelector(state => state.students);
+  const { fees } = useSelector(state => state.fees);
 
   useEffect(() => {
-    dispatch(getStudents())
-    dispatch(getFees())
-  }, [dispatch])
+    if (user) {
+      dispatch(getStudents({ salesPerson: user._id }));
+      dispatch(getFees({ salesPerson: user._id }));
+    }
+  }, [dispatch, user]);
 
-  const trialStudents = students.filter(s => s.status === 'trial').length
-  const pendingFees = fees.filter(f => f.status !== 'paid').length
-  const totalRevenue = fees.filter(f => f.status === 'paid').reduce((sum, fee) => sum + fee.amount, 0)
+  const totalLeads = students.length;
+  const activeStudents = students.filter(s => s.status === 'active').length;
+  const trialStudents = students.filter(s => s.status === 'trial').length;
 
   return (
-    <Box>
+    <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>Sales Dashboard</Typography>
       
       <Grid container spacing={3} sx={{ mb: 3 }}>
-        <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6">Trial Students</Typography>
-            <Typography variant="h4">{trialStudents}</Typography>
-          </Paper>
+        <Grid item xs={12} sm={4}>
+          <Card>
+            <CardContent>
+              <Typography color="textSecondary" gutterBottom>Total Leads</Typography>
+              <Typography variant="h5">{totalLeads}</Typography>
+            </CardContent>
+          </Card>
         </Grid>
-        <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6">Pending Fees</Typography>
-            <Typography variant="h4">{pendingFees}</Typography>
-          </Paper>
+        <Grid item xs={12} sm={4}>
+          <Card>
+            <CardContent>
+              <Typography color="textSecondary" gutterBottom>Active Students</Typography>
+              <Typography variant="h5">{activeStudents}</Typography>
+            </CardContent>
+          </Card>
         </Grid>
-        <Grid item xs={12} md={4}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6">Total Revenue</Typography>
-            <Typography variant="h4">₹{totalRevenue.toLocaleString()}</Typography>
-          </Paper>
+        <Grid item xs={12} sm={4}>
+          <Card>
+            <CardContent>
+              <Typography color="textSecondary" gutterBottom>Trial Students</Typography>
+              <Typography variant="h5">{trialStudents}</Typography>
+            </CardContent>
+          </Card>
         </Grid>
       </Grid>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: '400px' }}>
-            <Typography variant="h6" gutterBottom>Recent Enrollments</Typography>
-            <StudentList students={students} />
-          </Paper>
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: '400px' }}>
-            <Typography variant="h6" gutterBottom>Fee Status</Typography>
-            <FeeList fees={fees} />
-          </Paper>
-        </Grid>
-      </Grid>
+      <Card>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>My Leads</Typography>
+          <StudentList />
+        </CardContent>
+      </Card>
     </Box>
-  )
-}
+  );
+};
 
-export default SalesDashboard
+export default SalesDashboard;
