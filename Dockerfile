@@ -29,4 +29,4 @@ ENV PORT=5000
 
 # Start the application
 WORKDIR /app/codehub-erp-backend
-CMD ["npm", "start"]
+CMD ["sh", "-c", "npm start"]
