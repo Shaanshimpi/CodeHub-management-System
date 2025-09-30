@@ -12,7 +12,7 @@ COPY frontend/package*.json ./frontend/
 # Install dependencies
 RUN npm install
 RUN cd codehub-erp-backend && npm ci --only=production
-RUN cd frontend && npm ci --legacy-peer-deps
+RUN cd frontend && npm install --legacy-peer-deps
 
 # Copy source code
 COPY . .
