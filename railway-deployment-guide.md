@@ -13,10 +13,12 @@ This guide will help you deploy your CodeHub ERP application to Railway.
 ### 1. Prepare Your Repository
 
 Make sure all the configuration files are in place:
-- `railway.json` - Railway configuration
-- `nixpacks.toml` - Build configuration
+- `railway.json` - Railway configuration (uses Dockerfile)
+- `Dockerfile` - Docker build configuration
+- `nixpacks.toml` - Alternative build configuration
 - `Procfile` - Process definition
 - `env.example` - Environment variables template
+- `.dockerignore` - Docker ignore file
 
 ### 2. Deploy to Railway
 
@@ -46,12 +48,14 @@ Make sure all the configuration files are in place:
    ```
 
 3. **Deploy:**
-   - Railway will automatically detect the configuration and start building
+   - Railway will automatically detect the Dockerfile and start building
    - The build process will:
-     - Install backend dependencies
+     - Install root dependencies
+     - Install backend dependencies (production only)
      - Install frontend dependencies
      - Build the React frontend
      - Start the Node.js server
+   - If Dockerfile fails, Railway will fall back to Nixpacks configuration
 
 ### 3. Database Setup
 

@@ -1,16 +1,9 @@
-[phases.setup]
-nixPkgs = ['nodejs', 'npm']
-
 [phases.install]
 cmds = [
-  'npm ci --only=production --prefix=codehub-erp-backend',
-  'npm ci --prefix=frontend',
-  'npm run build --prefix=frontend'
-]
-
-[phases.build]
-cmds = [
-  'echo "Build completed"'
+  'npm install',
+  'cd codehub-erp-backend && npm ci --only=production',
+  'cd ../frontend && npm ci',
+  'cd ../frontend && npm run build'
 ]
 
 [start]
