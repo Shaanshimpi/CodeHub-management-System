@@ -26,6 +26,13 @@ const createFee = async (feeData) => {
   return response.data;
 };
 
-const feeService = { getFees, getStudentFees, createFee };
+const updateFeeStatus = async (id, status) => {
+  console.debug('[api/fees] PATCH /api/fees/:id/status request', { id, status });
+  const response = await axios.patch(`/api/fees/${id}/status`, { status });
+  console.debug('[api/fees] PATCH /api/fees/:id/status response', response.data?._id);
+  return response.data;
+};
+
+const feeService = { getFees, getStudentFees, createFee, updateFeeStatus };
 
 export default feeService;

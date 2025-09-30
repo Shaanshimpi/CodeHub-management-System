@@ -33,4 +33,9 @@ router.get('/pending', protect, roleBasedAccess(['super_admin', 'sales_person', 
 // @access  Private/SalesPerson
 router.get('/overdue', protect, roleBasedAccess(['super_admin', 'sales_person', 'admin']), feeController.getOverdueFees);
 
+// @route   PATCH /api/fees/:id/status
+// @desc    Update fee status
+// @access  Private/Admin/SalesPerson
+router.patch('/:id/status', protect, roleBasedAccess(['super_admin', 'sales_person', 'admin']), feeController.updateFeeStatus);
+
 module.exports = router;

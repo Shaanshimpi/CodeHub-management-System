@@ -1,6 +1,8 @@
 const Fee = require('../models/feeModel');
 const Student = require('../models/studentModel');
 const Course = require('../models/courseModel');
+const User = require('../models/userModel');
+const sendEmail = require('../utils/sendEmail');
 
 // @desc    Get all fee records
 // @route   GET /api/fees
@@ -17,7 +19,14 @@ const getFees = async (req, res, next) => {
     }
 
     const fees = await Fee.find(query)
-      .populate('studentId', 'studentId')
+      .populate({
+        path: 'studentId',
+        select: 'studentId',
+        populate: {
+          path: 'userId',
+          select: 'name email'
+        }
+      })
       .populate('courseId', 'name')
       .populate('createdBy', 'name')
       .sort({ dueDate: 1 });
@@ -66,8 +75,55 @@ const createFee = async (req, res, next) => {
       createdBy: req.user._id,
       status: 'pending'
     });
+
+    // Populate the fee with student and course details for email
+    const populatedFee = await Fee.findById(fee._id)
+      .populate({
+        path: 'studentId',
+        select: 'studentId',
+        populate: {
+          path: 'userId',
+          select: 'name email'
+        }
+      })
+      .populate('courseId', 'name');
+
+    // Send email notification to student about fee reminder
+    try {
+      const studentEmail = populatedFee.studentId.userId.email;
+      const studentName = populatedFee.studentId.userId.name;
+      const courseName = populatedFee.courseId.name;
+      
+      const emailSubject = `Fee Reminder - ${courseName}`;
+      const emailMessage = `
+Dear ${studentName},
+
+This is a reminder that you have a pending fee payment for the course "${courseName}".
+
+Fee Details:
+- Amount: ₹${amount.toLocaleString()}
+- Due Date: ${new Date(dueDate).toLocaleDateString()}
+- Student ID: ${populatedFee.studentId.studentId}
+
+Please ensure payment is made before the due date to avoid any late fees.
+
+If you have already made the payment, please contact your sales representative to update the records.
+
+Best regards,
+CodeHub ERP Team
+      `;
+
+      await sendEmail({
+        email: studentEmail,
+        subject: emailSubject,
+        message: emailMessage
+      });
+    } catch (emailError) {
+      console.error('Failed to send fee reminder email:', emailError);
+      // Don't fail the request if email sending fails
+    }
     
-    res.status(201).json(fee);
+    res.status(201).json(populatedFee);
   } catch (error) {
     next(error);
   }
@@ -139,7 +195,14 @@ const recordPayment = async (req, res, next) => {
 const getPendingFees = async (req, res, next) => {
   try {
     const fees = await Fee.find({ status: 'pending' })
-      .populate('studentId', 'studentId')
+      .populate({
+        path: 'studentId',
+        select: 'studentId',
+        populate: {
+          path: 'userId',
+          select: 'name email'
+        }
+      })
       .populate('courseId', 'name')
       .sort({ dueDate: 1 });
     
@@ -159,11 +222,75 @@ const getOverdueFees = async (req, res, next) => {
       status: 'overdue',
       dueDate: { $lte: today }
     })
-      .populate('studentId', 'studentId')
+      .populate({
+        path: 'studentId',
+        select: 'studentId',
+        populate: {
+          path: 'userId',
+          select: 'name email'
+        }
+      })
       .populate('courseId', 'name')
       .sort({ dueDate: 1 });
     
     res.json(fees);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update fee status
+// @route   PATCH /api/fees/:id/status
+// @access  Private/Admin/SalesPerson
+const updateFeeStatus = async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    const { id } = req.params;
+    
+    // Validate status
+    if (!['pending', 'paid', 'overdue'].includes(status)) {
+      res.status(400);
+      throw new Error('Invalid status. Must be pending, paid, or overdue');
+    }
+    
+    const fee = await Fee.findById(id);
+    
+    if (!fee) {
+      res.status(404);
+      throw new Error('Fee record not found');
+    }
+    
+    // Update status
+    fee.status = status;
+    
+    // If marking as paid, set paid date
+    if (status === 'paid' && !fee.paidDate) {
+      fee.paidDate = new Date();
+    }
+    
+    // If changing from paid to another status, clear paid date
+    if (status !== 'paid' && fee.paidDate) {
+      fee.paidDate = null;
+      fee.paymentMethod = null;
+      fee.transactionId = null;
+    }
+    
+    const updatedFee = await fee.save();
+    
+    // Populate the updated fee
+    const populatedFee = await Fee.findById(updatedFee._id)
+      .populate({
+        path: 'studentId',
+        select: 'studentId',
+        populate: {
+          path: 'userId',
+          select: 'name email'
+        }
+      })
+      .populate('courseId', 'name')
+      .populate('createdBy', 'name');
+    
+    res.json(populatedFee);
   } catch (error) {
     next(error);
   }
@@ -175,5 +302,6 @@ module.exports = {
   updateFee,
   recordPayment,
   getPendingFees,
-  getOverdueFees
+  getOverdueFees,
+  updateFeeStatus
 };

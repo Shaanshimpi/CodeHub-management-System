@@ -67,6 +67,17 @@ export const recordPayment = createAsyncThunk(
   }
 );
 
+export const updateFeeStatus = createAsyncThunk(
+  'fees/updateStatus',
+  async ({ id, status }, { rejectWithValue }) => {
+    try {
+      return await feeService.updateFeeStatus(id, status);
+    } catch (error) {
+      return rejectWithValue(error.response.data);
+    }
+  }
+);
+
 const feeSlice = createSlice({
   name: 'fees',
   initialState: {
@@ -154,6 +165,21 @@ const feeSlice = createSlice({
         state.currentFee = action.payload; // Update currentFee as well
       })
       .addCase(recordPayment.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      .addCase(updateFeeStatus.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(updateFeeStatus.fulfilled, (state, action) => {
+        state.loading = false;
+        const index = state.fees.findIndex(fee => fee._id === action.payload._id);
+        if (index !== -1) {
+          state.fees[index] = action.payload;
+        }
+      })
+      .addCase(updateFeeStatus.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       });
